@@ -76,6 +76,7 @@ export const ru: TranslationDictionary = {
     testFailedDesc: 'Не удалось установить SSH-соединение. Проверьте правильность хоста, порта и учетных данных.',
     fixCredentials: 'Исправить данные',
     ignoreAndSave: 'Игнорировать и сохранить',
+    passwordRequiredForTest: 'Укажите пароль для проверки соединения (или сохраните подключение без пароля — он будет запрошен при входе).',
   },
   authPrompt: {
     title: 'Требуется SSH-аутентификация',

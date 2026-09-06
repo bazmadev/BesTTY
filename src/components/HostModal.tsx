@@ -107,33 +107,46 @@ export const HostModal: React.FC<HostModalProps> = ({
     }
   };
 
-  const buildCurrentProfile = (extraFingerprint?: string): HostProfile => ({
-    id: hostToEdit ? hostToEdit.id : crypto.randomUUID(),
-    name: name.trim() || `${username}@${host}`,
-    host: host.trim(),
-    port: Number(port) || 22,
-    username: username.trim() || 'root',
-    authType,
-    password: authType === 'password' ? password : undefined,
-    privateKeyContent: authType === 'privateKey' ? privateKeyContent : undefined,
-    privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
-    passphrase: authType === 'privateKey' && passphrase ? passphrase : undefined,
-    group: group.trim() || 'Default',
-    color,
-    defaultPath: defaultPath.trim() || undefined,
-    proxyJumpId: proxyJumpId || undefined,
-    fingerprint: extraFingerprint || hostToEdit?.fingerprint,
-    createdAt: hostToEdit ? hostToEdit.createdAt : Date.now(),
-    updatedAt: Date.now(),
-  });
+  const buildCurrentProfile = (extraFingerprint?: string): HostProfile => {
+    const rawUser = username.trim() || 'root';
+    const cleanUser = rawUser.toLowerCase() === 'root' ? 'root' : rawUser;
+    const cleanPassword = password ? password.replace(/[\r\n]+$/, '') : undefined;
+
+    return {
+      id: hostToEdit ? hostToEdit.id : crypto.randomUUID(),
+      name: name.trim() || `${cleanUser}@${host.trim()}`,
+      host: host.trim(),
+      port: Number(port) || 22,
+      username: cleanUser,
+      authType,
+      password: authType === 'password' ? cleanPassword : undefined,
+      privateKeyContent: authType === 'privateKey' ? privateKeyContent : undefined,
+      privateKeyPath: authType === 'privateKey' ? privateKeyPath.trim() : undefined,
+      passphrase: authType === 'privateKey' && passphrase ? passphrase : undefined,
+      group: group.trim() || 'Default',
+      color,
+      defaultPath: defaultPath.trim() || undefined,
+      proxyJumpId: proxyJumpId || undefined,
+      fingerprint: extraFingerprint || hostToEdit?.fingerprint,
+      createdAt: hostToEdit ? hostToEdit.createdAt : Date.now(),
+      updatedAt: Date.now(),
+    };
+  };
 
   const handleRunManualTest = async () => {
     if (!host.trim() || !username.trim()) return;
+    const profile = buildCurrentProfile();
+    if (profile.authType === 'password' && !profile.password) {
+      setTestResult({
+        success: false,
+        error: t('modal.passwordRequiredForTest'),
+      });
+      return;
+    }
     setIsTesting(true);
     setTestResult(null);
     setSaveError(null);
     try {
-      const profile = buildCurrentProfile();
       const result = await window.api.ssh.testConnection(profile);
       setTestResult(result);
     } catch (e: any) {
@@ -154,9 +167,16 @@ export const HostModal: React.FC<HostModalProps> = ({
     if (!host.trim() || !username.trim()) return;
 
     setSaveError(null);
-    setIsTesting(true);
     const profile = buildCurrentProfile();
 
+    // If password auth is selected but password is empty, user plans to enter it upon connection
+    if (profile.authType === 'password' && !profile.password) {
+      onSave(profile);
+      onClose();
+      return;
+    }
+
+    setIsTesting(true);
     try {
       const result = await window.api.ssh.testConnection(profile);
       setIsTesting(false);
@@ -299,6 +319,11 @@ export const HostModal: React.FC<HostModalProps> = ({
               placeholder="root, ubuntu, debian..."
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              onBlur={() => {
+                if (username.trim().toLowerCase() === 'root') {
+                  setUsername('root');
+                }
+              }}
               className={`w-full border rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-sky-500 ${
                 isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
               }`}

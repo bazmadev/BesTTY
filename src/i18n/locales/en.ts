@@ -74,6 +74,7 @@ export const en = {
     testFailedDesc: 'Unable to establish SSH connection. Please verify host, port, username, and credentials.',
     fixCredentials: 'Fix Details',
     ignoreAndSave: 'Ignore & Save Anyway',
+    passwordRequiredForTest: 'Please provide a password to test the connection (or save without password to be prompted upon connection).',
   },
   authPrompt: {
     title: 'SSH Authentication Required',

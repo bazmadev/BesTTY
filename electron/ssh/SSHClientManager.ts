@@ -45,10 +45,21 @@ export const SSH_ALGORITHMS = {
   },
 };
 
+function getEffectiveUsername(username?: string): string {
+  const trimmed = (username || 'root').trim();
+  return trimmed.toLowerCase() === 'root' ? 'root' : trimmed;
+}
+
+function getEffectivePassword(password?: string): string | undefined {
+  if (!password) return undefined;
+  return password.replace(/[\r\n]+$/, '');
+}
+
 function applyAuthConfig(config: ConnectConfig, host: HostProfile): void {
+  const cleanPassword = getEffectivePassword(host.password);
   if (host.authType === 'password') {
-    if (host.password) {
-      config.password = host.password;
+    if (cleanPassword) {
+      config.password = cleanPassword;
     } else {
       // Smart fallback: try local ssh-agent or default user keys (~/.ssh/id_ed25519, ~/.ssh/id_rsa)
       const agentPipe = process.platform === 'win32'
@@ -94,6 +105,103 @@ function applyAuthConfig(config: ConnectConfig, host: HostProfile): void {
   }
 }
 
+function setupAuthPipeline(
+  config: ConnectConfig,
+  host: HostProfile,
+  client: Client
+): { getServerMethodsAllowed: () => string[] | null } {
+  let serverMethodsAllowed: string[] | null = null;
+  const triedMethods = new Set<string>();
+  const cleanPassword = getEffectivePassword(host.password);
+
+  config.authHandler = (methodsLeft, _partial, _cb) => {
+    if (methodsLeft && Array.isArray(methodsLeft)) {
+      serverMethodsAllowed = methodsLeft;
+    }
+    if (!methodsLeft) {
+      return 'none';
+    }
+
+    // 1. Try password if available and accepted by server
+    if (
+      config.password !== undefined &&
+      methodsLeft.includes('password') &&
+      !triedMethods.has('password')
+    ) {
+      triedMethods.add('password');
+      return 'password';
+    }
+
+    // 2. Try keyboard-interactive (PAM) if enabled and accepted by server
+    if (
+      config.tryKeyboard &&
+      methodsLeft.includes('keyboard-interactive') &&
+      !triedMethods.has('keyboard-interactive')
+    ) {
+      triedMethods.add('keyboard-interactive');
+      return 'keyboard-interactive';
+    }
+
+    // 3. Try publickey if configured and accepted by server
+    if (
+      config.privateKey !== undefined &&
+      methodsLeft.includes('publickey') &&
+      !triedMethods.has('publickey')
+    ) {
+      triedMethods.add('publickey');
+      return 'publickey';
+    }
+
+    // 4. Try agent if configured and accepted by server
+    if (
+      config.agent !== undefined &&
+      methodsLeft.includes('agent') &&
+      !triedMethods.has('agent')
+    ) {
+      triedMethods.add('agent');
+      return 'agent';
+    }
+
+    return false;
+  };
+
+  client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, finish) => {
+    if (prompts && prompts.length > 0 && cleanPassword) {
+      finish(prompts.map(() => cleanPassword));
+    } else {
+      finish([]);
+    }
+  });
+
+  return {
+    getServerMethodsAllowed: () => serverMethodsAllowed,
+  };
+}
+
+function formatAuthError(
+  rawError: string,
+  host: HostProfile,
+  serverMethods: string[] | null
+): string {
+  const username = getEffectiveUsername(host.username);
+  if (rawError.includes('All configured authentication methods failed')) {
+    if (serverMethods && serverMethods.length > 0) {
+      const allowsPassword =
+        serverMethods.includes('password') || serverMethods.includes('keyboard-interactive');
+      if (!allowsPassword) {
+        return `Сервер отклонил вход по паролю: авторизация по паролю отключена в настройках SSH-сервера (разрешены только методы: ${serverMethods.join(', ')}). Для пользователя "${username}" на большинстве Linux-серверов активен запрет входа по паролю (PermitRootLogin prohibit-password в /etc/ssh/sshd_config). Используйте SSH-ключ или разрешите вход по паролю на сервере.`;
+      } else {
+        return `Сервер отклонил пароль для пользователя "${username}". Проверьте правильность пароля и имя пользователя (в Linux имя root пишется строчными буквами).`;
+      }
+    }
+    if (host.authType === 'password' && !host.password) {
+      return `Пароль для пользователя "${username}" не указан.`;
+    }
+    return `Ошибка аутентификации пользователя "${username}". Проверьте учетные данные или способ авторизации.`;
+  }
+  return rawError;
+}
+
 export class SSHClientManager extends EventEmitter {
   private sessions: Map<string, SSHSessionInfo> = new Map();
 
@@ -111,10 +219,11 @@ export class SSHClientManager extends EventEmitter {
       const client = new Client();
       let detectedFingerprint = '';
 
+      const username = getEffectiveUsername(host.username);
       const config: ConnectConfig = {
         host: host.host,
         port: host.port || 22,
-        username: host.username,
+        username,
         keepaliveInterval: (host.keepAliveInterval || 30) * 1000,
         readyTimeout: 25000,
         tryKeyboard: true, // Enables PAM / keyboard-interactive authentication fallback
@@ -126,17 +235,9 @@ export class SSHClientManager extends EventEmitter {
         algorithms: SSH_ALGORITHMS as any,
       };
 
-      // Configure Authentication
+      // Configure Authentication & Pipeline
       applyAuthConfig(config, host);
-
-      // Handle PAM / keyboard-interactive challenges (resolves 'All configured authentication methods failed')
-      client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, finish) => {
-        if (prompts && prompts.length > 0 && host.password) {
-          finish(prompts.map(() => host.password!));
-        } else {
-          finish([]);
-        }
-      });
+      const authPipeline = setupAuthPipeline(config, host, client);
 
       client.on('ready', () => {
         // Open interactive PTY shell
@@ -198,11 +299,16 @@ export class SSHClientManager extends EventEmitter {
       });
 
       client.on('error', (err) => {
-        console.error(`SSH Client error for session ${sessionId}:`, err.message);
-        this.emit('ssh-error', { sessionId, error: err.message });
+        const diagnosticError = formatAuthError(
+          err.message || String(err),
+          host,
+          authPipeline.getServerMethodsAllowed()
+        );
+        console.error(`SSH Client error for session ${sessionId}:`, diagnosticError);
+        this.emit('ssh-error', { sessionId, error: diagnosticError });
         if (!isResolved) {
           isResolved = true;
-          reject(err);
+          reject(new Error(diagnosticError));
         }
       });
 
@@ -255,10 +361,11 @@ export class SSHClientManager extends EventEmitter {
         cleanupAndResolve(false, 'Connection timeout (10s): Remote host did not respond');
       }, 10000);
 
+      const username = getEffectiveUsername(host.username);
       const config: ConnectConfig = {
         host: host.host,
         port: host.port || 22,
-        username: host.username,
+        username,
         readyTimeout: 10000,
         tryKeyboard: true,
         hostHash: 'sha256',
@@ -270,21 +377,19 @@ export class SSHClientManager extends EventEmitter {
       };
 
       applyAuthConfig(config, host);
-
-      client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, finish) => {
-        if (prompts && prompts.length > 0 && host.password) {
-          finish(prompts.map(() => host.password!));
-        } else {
-          finish([]);
-        }
-      });
+      const authPipeline = setupAuthPipeline(config, host, client);
 
       client.on('ready', () => {
         cleanupAndResolve(true);
       });
 
       client.on('error', (err) => {
-        cleanupAndResolve(false, err.message || String(err));
+        const diagnosticError = formatAuthError(
+          err.message || String(err),
+          host,
+          authPipeline.getServerMethodsAllowed()
+        );
+        cleanupAndResolve(false, diagnosticError);
       });
 
       try {

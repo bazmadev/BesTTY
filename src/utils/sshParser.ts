@@ -92,9 +92,12 @@ export function parseSSHConnectionString(input: string): ParsedSSHConnection {
     host = targetToken;
   }
 
+  const cleanUser = (username || 'root').trim();
+  const effectiveUser = cleanUser.toLowerCase() === 'root' ? 'root' : cleanUser;
+
   return {
     protocol,
-    username: username || 'root',
+    username: effectiveUser,
     host: host || trimmed,
     port: port || 22,
     privateKeyPath,
