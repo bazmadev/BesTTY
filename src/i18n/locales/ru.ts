@@ -140,6 +140,10 @@ export const ru: TranslationDictionary = {
     contextSelectAll: 'Выделить всё',
     next: 'Далее',
     sessionClosed: '[Сессия закрыта удаленным сервером]',
+    resizerTooltip: 'Потяните для изменения ширины (двойной клик — сброс)',
+    dockLeft: 'Закрепить слева',
+    dockRight: 'Закрепить справа',
+    closeSidebar: 'Закрыть панель',
   },
   sftp: {
     parentFolder: 'На уровень вверх (..)',

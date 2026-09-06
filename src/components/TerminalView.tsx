@@ -24,6 +24,46 @@ interface TerminalViewProps {
   onDuplicateSession: () => void;
 }
 
+interface TerminalLayoutConfig {
+  sftpWidth: number;
+  monitorWidth: number;
+  showSftp: boolean;
+  showMonitor: boolean;
+  sftpPos: 'left' | 'right';
+  monitorPos: 'left' | 'right';
+}
+
+const STORAGE_KEY_LAYOUT = 'bestty_terminal_layout_v1';
+
+const getInitialLayoutConfig = (): TerminalLayoutConfig => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_LAYOUT);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const sftpWidth =
+        typeof parsed.sftpWidth === 'number' && parsed.sftpWidth >= 180 ? parsed.sftpWidth : 288;
+      const monitorWidth =
+        typeof parsed.monitorWidth === 'number' && parsed.monitorWidth >= 180 ? parsed.monitorWidth : 288;
+      const showSftp = typeof parsed.showSftp === 'boolean' ? parsed.showSftp : true;
+      const showMonitor = typeof parsed.showMonitor === 'boolean' ? parsed.showMonitor : false;
+      const sftpPos: 'left' | 'right' = parsed.sftpPos === 'left' ? 'left' : 'right';
+      let monitorPos: 'left' | 'right' = parsed.monitorPos === 'right' ? 'right' : 'left';
+      if (showSftp && showMonitor && sftpPos === monitorPos) {
+        monitorPos = sftpPos === 'right' ? 'left' : 'right';
+      }
+      return { sftpWidth, monitorWidth, showSftp, showMonitor, sftpPos, monitorPos };
+    }
+  } catch (e) {}
+  return {
+    sftpWidth: 288,
+    monitorWidth: 288,
+    showSftp: true,
+    showMonitor: false,
+    sftpPos: 'right',
+    monitorPos: 'left',
+  };
+};
+
 export const TerminalView: React.FC<TerminalViewProps> = ({
   sessionId,
   host,
@@ -47,12 +87,50 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   // Right-click context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
-  // Sidebars State (Opposite side enforcement)
-  const [showSftpSidebar, setShowSftpSidebar] = useState(true);
-  const [sftpPosition, setSftpPosition] = useState<'left' | 'right'>('right');
+  // Load initial layout config from localStorage
+  const initialLayout = useRef(getInitialLayoutConfig()).current;
 
-  const [showMonitorSidebar, setShowMonitorSidebar] = useState(false);
-  const [monitorPosition, setMonitorPosition] = useState<'left' | 'right'>('left');
+  // Sidebars Widths & State (Opposite side enforcement & persistence)
+  const [sftpSidebarWidth, setSftpSidebarWidth] = useState<number>(initialLayout.sftpWidth);
+  const [monitorSidebarWidth, setMonitorSidebarWidth] = useState<number>(initialLayout.monitorWidth);
+  const [showSftpSidebar, setShowSftpSidebar] = useState<boolean>(initialLayout.showSftp);
+  const [sftpPosition, setSftpPosition] = useState<'left' | 'right'>(initialLayout.sftpPos);
+  const [showMonitorSidebar, setShowMonitorSidebar] = useState<boolean>(initialLayout.showMonitor);
+  const [monitorPosition, setMonitorPosition] = useState<'left' | 'right'>(initialLayout.monitorPos);
+
+  // Drag-resizing State
+  const [isResizing, setIsResizing] = useState(false);
+  const resizingRef = useRef<{
+    panel: 'sftp' | 'monitor';
+    dock: 'left' | 'right';
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  // Persist sidebar layout configuration across sessions
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY_LAYOUT,
+        JSON.stringify({
+          sftpWidth: sftpSidebarWidth,
+          monitorWidth: monitorSidebarWidth,
+          showSftp: showSftpSidebar,
+          showMonitor: showMonitorSidebar,
+          sftpPos: sftpPosition,
+          monitorPos: monitorPosition,
+        })
+      );
+    } catch (e) {}
+  }, [sftpSidebarWidth, monitorSidebarWidth, showSftpSidebar, showMonitorSidebar, sftpPosition, monitorPosition]);
+
+  // Clean up cursor and selection if unmounted while dragging
+  useEffect(() => {
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, []);
 
   // Mini-Monitor Metrics State
   const [metrics, setMetrics] = useState<ServerMetrics | null>(null);
@@ -89,7 +167,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     if (showMonitorSidebar) {
       setMonitorPosition(nextSftpPos === 'right' ? 'left' : 'right');
     }
-    setTimeout(() => fitAddonRef.current?.fit(), 100);
+    setTimeout(() => fitAddonRef.current?.fit(), 50);
   };
 
   const toggleMonitorPosition = () => {
@@ -98,7 +176,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     if (showSftpSidebar) {
       setSftpPosition(nextMonPos === 'right' ? 'left' : 'right');
     }
-    setTimeout(() => fitAddonRef.current?.fit(), 100);
+    setTimeout(() => fitAddonRef.current?.fit(), 50);
   };
 
   const handleSwapPanels = () => {
@@ -106,18 +184,75 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     const newMonPos = monitorPosition === 'right' ? 'left' : 'right';
     setSftpPosition(newSftpPos);
     setMonitorPosition(newMonPos);
-    setTimeout(() => fitAddonRef.current?.fit(), 100);
+    setTimeout(() => fitAddonRef.current?.fit(), 50);
   };
 
-  // Toggle Mini-Monitor Sidebar
+  // Toggle SFTP Sidebar with collision prevention
+  const handleToggleSftpSidebar = () => {
+    const nextState = !showSftpSidebar;
+    setShowSftpSidebar(nextState);
+    if (nextState && showMonitorSidebar) {
+      setSftpPosition(monitorPosition === 'right' ? 'left' : 'right');
+    }
+    setTimeout(() => fitAddonRef.current?.fit(), 50);
+  };
+
+  // Toggle Mini-Monitor Sidebar with collision prevention
   const handleToggleMonitorSidebar = () => {
     const nextState = !showMonitorSidebar;
     setShowMonitorSidebar(nextState);
     if (nextState && showSftpSidebar) {
-      // Ensure they don't collide on the same side
       setMonitorPosition(sftpPosition === 'right' ? 'left' : 'right');
     }
-    setTimeout(() => fitAddonRef.current?.fit(), 100);
+    setTimeout(() => fitAddonRef.current?.fit(), 50);
+  };
+
+  // Start Resizing Sidebar
+  const handleStartResize = (
+    e: React.MouseEvent,
+    panel: 'sftp' | 'monitor',
+    dock: 'left' | 'right'
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = panel === 'sftp' ? sftpSidebarWidth : monitorSidebarWidth;
+
+    resizingRef.current = { panel, dock, startX, startWidth };
+    setIsResizing(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (moveEvt: MouseEvent) => {
+      moveEvt.preventDefault();
+      if (!resizingRef.current) return;
+      const { panel: p, dock: d, startX: sX, startWidth: sW } = resizingRef.current;
+      const delta = d === 'left' ? moveEvt.clientX - sX : sX - moveEvt.clientX;
+      const maxWidth = Math.min(800, Math.floor(window.innerWidth * 0.55));
+      const nextWidth = Math.min(Math.max(180, sW + delta), maxWidth);
+
+      if (p === 'sftp') {
+        setSftpSidebarWidth(nextWidth);
+      } else {
+        setMonitorSidebarWidth(nextWidth);
+      }
+      try {
+        fitAddonRef.current?.fit();
+      } catch (err) {}
+    };
+
+    const onMouseUp = () => {
+      resizingRef.current = null;
+      setIsResizing(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      setTimeout(() => fitAddonRef.current?.fit(), 30);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
   };
 
   // Load directory in SFTP sidebar
@@ -440,11 +575,14 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
 
   // Render SFTP Sidebar Component
   const renderSftpSidebar = () => (
-    <div className={`w-72 flex flex-col h-full select-none shadow-lg z-10 transition-all ${
-      sftpPosition === 'right' ? 'border-l' : 'border-r'
-    } ${
-      isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#1c1c1c] border-[#2c2c2c]'
-    }`}>
+    <div
+      style={{ width: `${sftpSidebarWidth}px` }}
+      className={`flex flex-col h-full select-none shadow-lg z-10 flex-shrink-0 ${
+        sftpPosition === 'right' ? 'border-l' : 'border-r'
+      } ${
+        isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#1c1c1c] border-[#2c2c2c]'
+      }`}
+    >
       {/* Sidebar Header & Path Navigation */}
       <div className={`p-2 border-b flex flex-col space-y-1.5 ${
         isLight ? 'bg-[#ececec] border-[#e0e0e0]' : 'bg-[#222222] border-[#2c2c2c]'
@@ -470,7 +608,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
             <button
               onClick={toggleSftpPosition}
               className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-              title={sftpPosition === 'left' ? 'Dock to Right' : 'Dock to Left'}
+              title={sftpPosition === 'left' ? t('terminal.dockRight') : t('terminal.dockLeft')}
             >
               {sftpPosition === 'left' ? <PanelRight className="w-3.5 h-3.5" /> : <PanelLeft className="w-3.5 h-3.5" />}
             </button>
@@ -496,7 +634,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
                 setTimeout(() => fitAddonRef.current?.fit(), 100);
               }}
               className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-              title="Close Sidebar"
+              title={t('terminal.closeSidebar')}
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -589,13 +727,45 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     </div>
   );
 
+  // Render Splitter (Resize Handle)
+  const renderSplitter = (panel: 'sftp' | 'monitor', dock: 'left' | 'right') => {
+    const isSftp = panel === 'sftp';
+    return (
+      <div
+        onMouseDown={(e) => handleStartResize(e, panel, dock)}
+        onDoubleClick={() => {
+          if (isSftp) {
+            setSftpSidebarWidth(288);
+          } else {
+            setMonitorSidebarWidth(288);
+          }
+          setTimeout(() => fitAddonRef.current?.fit(), 50);
+        }}
+        title={t('terminal.resizerTooltip')}
+        className={`w-1 hover:w-1.5 cursor-col-resize flex-shrink-0 relative group select-none transition-all z-20 ${
+          isLight
+            ? 'bg-slate-200/90 hover:bg-sky-400 active:bg-sky-500'
+            : isSftp
+              ? 'bg-[#2a2a2a] hover:bg-sky-500/80 active:bg-sky-500'
+              : 'bg-[#2a2a2a] hover:bg-purple-500/80 active:bg-purple-500'
+        } ${isResizing ? (isSftp ? 'bg-sky-500 w-1.5' : 'bg-purple-500 w-1.5') : ''}`}
+      >
+        {/* Expanded hit target for effortless grabbing */}
+        <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize" />
+      </div>
+    );
+  };
+
   // Render Mini-Monitor Sidebar Component
   const renderMiniMonitorSidebar = () => (
-    <div className={`w-72 flex flex-col h-full select-none shadow-lg z-10 transition-all ${
-      monitorPosition === 'right' ? 'border-l' : 'border-r'
-    } ${
-      isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#1c1c1c] border-[#2c2c2c]'
-    }`}>
+    <div
+      style={{ width: `${monitorSidebarWidth}px` }}
+      className={`flex flex-col h-full select-none shadow-lg z-10 flex-shrink-0 ${
+        monitorPosition === 'right' ? 'border-l' : 'border-r'
+      } ${
+        isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#1c1c1c] border-[#2c2c2c]'
+      }`}
+    >
       {/* Mini-Monitor Header */}
       <div className={`p-2 border-b flex items-center justify-between ${
         isLight ? 'bg-[#ececec] border-[#e0e0e0]' : 'bg-[#222222] border-[#2c2c2c]'
@@ -620,7 +790,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
           <button
             onClick={toggleMonitorPosition}
             className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-            title={monitorPosition === 'left' ? 'Dock to Right' : 'Dock to Left'}
+            title={monitorPosition === 'left' ? t('terminal.dockRight') : t('terminal.dockLeft')}
           >
             {monitorPosition === 'left' ? <PanelRight className="w-3.5 h-3.5" /> : <PanelLeft className="w-3.5 h-3.5" />}
           </button>
@@ -631,7 +801,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
               setTimeout(() => fitAddonRef.current?.fit(), 100);
             }}
             className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-            title="Close Mini-Monitor"
+            title={t('terminal.closeSidebar')}
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -820,10 +990,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
 
           {/* SFTP Sidebar Toggle Button */}
           <button
-            onClick={() => {
-              setShowSftpSidebar(!showSftpSidebar);
-              setTimeout(() => fitAddonRef.current?.fit(), 100);
-            }}
+            onClick={handleToggleSftpSidebar}
             className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
               showSftpSidebar
                 ? isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
@@ -983,10 +1150,20 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       )}
 
       {/* Main Split Layout: Left Panel + Center Terminal + Right Panel */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {/* Left Side Slot */}
-        {showSftpSidebar && sftpPosition === 'left' && renderSftpSidebar()}
-        {showMonitorSidebar && monitorPosition === 'left' && renderMiniMonitorSidebar()}
+        {showSftpSidebar && sftpPosition === 'left' && (
+          <>
+            {renderSftpSidebar()}
+            {renderSplitter('sftp', 'left')}
+          </>
+        )}
+        {showMonitorSidebar && monitorPosition === 'left' && (
+          <>
+            {renderMiniMonitorSidebar()}
+            {renderSplitter('monitor', 'left')}
+          </>
+        )}
 
         {/* Center Terminal Canvas */}
         <div
@@ -995,12 +1172,22 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
             e.preventDefault();
             setContextMenu({ x: e.clientX, y: e.clientY });
           }}
-          className="flex-1 h-full p-1 overflow-hidden"
+          className={`flex-1 h-full p-1 overflow-hidden ${isResizing ? 'pointer-events-none' : ''}`}
         />
 
         {/* Right Side Slot */}
-        {showSftpSidebar && sftpPosition === 'right' && renderSftpSidebar()}
-        {showMonitorSidebar && monitorPosition === 'right' && renderMiniMonitorSidebar()}
+        {showMonitorSidebar && monitorPosition === 'right' && (
+          <>
+            {renderSplitter('monitor', 'right')}
+            {renderMiniMonitorSidebar()}
+          </>
+        )}
+        {showSftpSidebar && sftpPosition === 'right' && (
+          <>
+            {renderSplitter('sftp', 'right')}
+            {renderSftpSidebar()}
+          </>
+        )}
       </div>
     </div>
   );

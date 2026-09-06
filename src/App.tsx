@@ -454,139 +454,175 @@ const MainApp: React.FC = () => {
             />
           )}
 
-          {/* Terminal Views Container or Empty State */}
-          {currentView === 'terminal' && (
-            tabs.some((t) => t.type === 'terminal' && t.sessionId) ? (
-              tabs
-                .filter((t) => t.type === 'terminal' && t.sessionId)
-                .map((tab) => {
-                  const isTabActive = currentView === 'terminal' && activeTabId === tab.id;
-                  return (
-                    <div
-                      key={tab.sessionId}
-                      className="w-full h-full"
-                      style={{ display: isTabActive ? 'flex' : 'none' }}
-                    >
-                      <TerminalView
-                        sessionId={tab.sessionId!}
-                        host={activeSessions.get(tab.sessionId!)}
-                        isLight={isLight}
-                        isActive={isTabActive}
-                        onOpenSftp={() => handleOpenSftp(tab.sessionId!)}
-                        onOpenMonitor={() => handleOpenMonitor(tab.sessionId!)}
-                        onOpenFileInEditor={(filePath, fileName) =>
-                          handleOpenFileInEditor(tab.sessionId!, filePath, fileName)
-                        }
-                        onDuplicateSession={() => handleDuplicateSession(tab.sessionId)}
-                      />
-                    </div>
-                  );
-                })
-            ) : (
-              <EmptyStateView
-                viewType="terminal"
-                hosts={hosts}
-                isLight={isLight}
-                onConnectHost={(h) => handleConnect(h, 'terminal')}
-                onQuickConnect={(cmd) => handleQuickConnect(cmd, 'terminal')}
-                onNewHost={() => {
-                  setEditingHost(null);
-                  setIsHostModalOpen(true);
-                }}
-              />
-            )
-          )}
-
-          {/* Active SFTP Tab View or Empty State */}
-          {currentView === 'sftp' && (() => {
-            const sftpTab = tabs.find((t) => t.id === activeTabId && t.type === 'sftp' && t.sessionId) ||
-                            tabs.find((t) => t.type === 'sftp' && t.sessionId);
-            if (sftpTab && sftpTab.sessionId) {
+          {/* Terminal Views Container (Kept alive across tab & view switches) */}
+          {tabs
+            .filter((t) => t.type === 'terminal' && t.sessionId)
+            .map((tab) => {
+              const activeTerminalTabId =
+                tabs.find((item) => item.id === activeTabId && item.type === 'terminal')?.id ||
+                tabs.find((item) => item.type === 'terminal')?.id;
+              const isTabActive = currentView === 'terminal' && activeTerminalTabId === tab.id;
               return (
-                <SftpView
-                  sessionId={sftpTab.sessionId}
-                  isLight={isLight}
-                  initialPath={activeSessions.get(sftpTab.sessionId)?.defaultPath || '/'}
-                  onOpenFileInEditor={(filePath, fileName) =>
-                    handleOpenFileInEditor(sftpTab.sessionId!, filePath, fileName)
-                  }
-                  onNavigateToTerminal={(folderPath) => {
-                    const termTab = tabs.find(t => t.sessionId === sftpTab.sessionId && t.type === 'terminal');
-                    if (termTab) {
-                      setActiveTabId(termTab.id);
-                      setCurrentView('terminal');
-                      window.api?.ssh.write(sftpTab.sessionId!, `cd "${folderPath}"\n`);
-                    } else {
-                      const host = activeSessions.get(sftpTab.sessionId!);
-                      if (host) {
-                        executeConnection(host, 'terminal');
-                        setTimeout(() => {
-                          window.api?.ssh.write(sftpTab.sessionId!, `cd "${folderPath}"\n`);
-                        }, 600);
-                      }
+                <div
+                  key={tab.id}
+                  className="w-full h-full"
+                  style={{ display: isTabActive ? 'flex' : 'none' }}
+                >
+                  <TerminalView
+                    sessionId={tab.sessionId!}
+                    host={activeSessions.get(tab.sessionId!)}
+                    isLight={isLight}
+                    isActive={isTabActive}
+                    onOpenSftp={() => handleOpenSftp(tab.sessionId!)}
+                    onOpenMonitor={() => handleOpenMonitor(tab.sessionId!)}
+                    onOpenFileInEditor={(filePath, fileName) =>
+                      handleOpenFileInEditor(tab.sessionId!, filePath, fileName)
                     }
-                  }}
-                />
+                    onDuplicateSession={() => handleDuplicateSession(tab.sessionId)}
+                  />
+                </div>
               );
-            }
-            return (
-              <EmptyStateView
-                viewType="sftp"
-                hosts={hosts}
-                isLight={isLight}
-                onConnectHost={(h) => handleConnect(h, 'sftp')}
-                onQuickConnect={(cmd) => handleQuickConnect(cmd, 'sftp')}
-                onNewHost={() => {
-                  setEditingHost(null);
-                  setIsHostModalOpen(true);
-                }}
-              />
-            );
-          })()}
+            })}
 
-          {/* Active Monaco Editor Tab View */}
-          {currentView === 'editor' && activeTab && activeTab.sessionId && activeTab.filePath && (
-            <MonacoEditorView
-              sessionId={activeTab.sessionId}
-              filePath={activeTab.filePath}
-              fileName={activeTab.title}
+          {/* Terminal Empty State when no terminal tabs exist */}
+          {currentView === 'terminal' && !tabs.some((t) => t.type === 'terminal' && t.sessionId) && (
+            <EmptyStateView
+              viewType="terminal"
+              hosts={hosts}
               isLight={isLight}
-              onClose={() => handleCloseTab(activeTab.id)}
-              onModifiedChange={(isMod) => {
-                setTabs((prev) =>
-                  prev.map((t) => (t.id === activeTab.id ? { ...t, isModified: isMod } : t))
-                );
+              onConnectHost={(h) => handleConnect(h, 'terminal')}
+              onQuickConnect={(cmd) => handleQuickConnect(cmd, 'terminal')}
+              onNewHost={() => {
+                setEditingHost(null);
+                setIsHostModalOpen(true);
               }}
             />
           )}
 
-          {/* Active Monitor Tab View or Empty State */}
-          {currentView === 'monitor' && (() => {
-            const monTab = tabs.find((t) => t.id === activeTabId && t.type === 'monitor' && t.sessionId) ||
-                           tabs.find((t) => t.type === 'monitor' && t.sessionId);
-            if (monTab && monTab.sessionId) {
+          {/* Active SFTP Tab Views (Kept alive across tab & view switches) */}
+          {tabs
+            .filter((t) => t.type === 'sftp' && t.sessionId)
+            .map((tab) => {
+              const activeSftpTabId =
+                tabs.find((item) => item.id === activeTabId && item.type === 'sftp')?.id ||
+                tabs.find((item) => item.type === 'sftp')?.id;
+              const isTabActive = currentView === 'sftp' && activeSftpTabId === tab.id;
               return (
-                <MonitorView
-                  sessionId={monTab.sessionId}
-                  isLight={isLight}
-                  hostName={activeSessions.get(monTab.sessionId)?.name}
-                />
+                <div
+                  key={tab.id}
+                  className="w-full h-full"
+                  style={{ display: isTabActive ? 'flex' : 'none' }}
+                >
+                  <SftpView
+                    sessionId={tab.sessionId!}
+                    isLight={isLight}
+                    initialPath={activeSessions.get(tab.sessionId!)?.defaultPath || '/'}
+                    onOpenFileInEditor={(filePath, fileName) =>
+                      handleOpenFileInEditor(tab.sessionId!, filePath, fileName)
+                    }
+                    onNavigateToTerminal={(folderPath) => {
+                      const termTab = tabs.find(t => t.sessionId === tab.sessionId && t.type === 'terminal');
+                      if (termTab) {
+                        setActiveTabId(termTab.id);
+                        setCurrentView('terminal');
+                        window.api?.ssh.write(tab.sessionId!, `cd "${folderPath}"\n`);
+                      } else {
+                        const host = activeSessions.get(tab.sessionId!);
+                        if (host) {
+                          executeConnection(host, 'terminal');
+                          setTimeout(() => {
+                            window.api?.ssh.write(tab.sessionId!, `cd "${folderPath}"\n`);
+                          }, 600);
+                        }
+                      }
+                    }}
+                  />
+                </div>
               );
-            }
-            return (
-              <EmptyStateView
-                viewType="monitor"
-                hosts={hosts}
-                isLight={isLight}
-                onConnectHost={(h) => handleConnect(h, 'monitor')}
-                onQuickConnect={(cmd) => handleQuickConnect(cmd, 'monitor')}
-                onNewHost={() => {
-                  setEditingHost(null);
-                  setIsHostModalOpen(true);
-                }}
-              />
-            );
-          })()}
+            })}
+
+          {/* SFTP Empty State when no SFTP tabs exist */}
+          {currentView === 'sftp' && !tabs.some((t) => t.type === 'sftp' && t.sessionId) && (
+            <EmptyStateView
+              viewType="sftp"
+              hosts={hosts}
+              isLight={isLight}
+              onConnectHost={(h) => handleConnect(h, 'sftp')}
+              onQuickConnect={(cmd) => handleQuickConnect(cmd, 'sftp')}
+              onNewHost={() => {
+                setEditingHost(null);
+                setIsHostModalOpen(true);
+              }}
+            />
+          )}
+
+          {/* Active Monaco Editor Tab Views (Kept alive across tab & view switches) */}
+          {tabs
+            .filter((t) => t.type === 'editor' && t.sessionId && t.filePath)
+            .map((tab) => {
+              const activeEditorTabId =
+                tabs.find((item) => item.id === activeTabId && item.type === 'editor')?.id ||
+                tabs.find((item) => item.type === 'editor')?.id;
+              const isTabActive = currentView === 'editor' && activeEditorTabId === tab.id;
+              return (
+                <div
+                  key={tab.id}
+                  className="w-full h-full"
+                  style={{ display: isTabActive ? 'flex' : 'none' }}
+                >
+                  <MonacoEditorView
+                    sessionId={tab.sessionId!}
+                    filePath={tab.filePath!}
+                    fileName={tab.title}
+                    isLight={isLight}
+                    onClose={() => handleCloseTab(tab.id)}
+                    onModifiedChange={(isMod) => {
+                      setTabs((prev) =>
+                        prev.map((t) => (t.id === tab.id ? { ...t, isModified: isMod } : t))
+                      );
+                    }}
+                  />
+                </div>
+              );
+            })}
+
+          {/* Active Monitor Tab Views (Kept alive across tab & view switches) */}
+          {tabs
+            .filter((t) => t.type === 'monitor' && t.sessionId)
+            .map((tab) => {
+              const activeMonitorTabId =
+                tabs.find((item) => item.id === activeTabId && item.type === 'monitor')?.id ||
+                tabs.find((item) => item.type === 'monitor')?.id;
+              const isTabActive = currentView === 'monitor' && activeMonitorTabId === tab.id;
+              return (
+                <div
+                  key={tab.id}
+                  className="w-full h-full"
+                  style={{ display: isTabActive ? 'flex' : 'none' }}
+                >
+                  <MonitorView
+                    sessionId={tab.sessionId!}
+                    isLight={isLight}
+                    hostName={activeSessions.get(tab.sessionId!)?.name}
+                  />
+                </div>
+              );
+            })}
+
+          {/* Monitor Empty State when no monitor tabs exist */}
+          {currentView === 'monitor' && !tabs.some((t) => t.type === 'monitor' && t.sessionId) && (
+            <EmptyStateView
+              viewType="monitor"
+              hosts={hosts}
+              isLight={isLight}
+              onConnectHost={(h) => handleConnect(h, 'monitor')}
+              onQuickConnect={(cmd) => handleQuickConnect(cmd, 'monitor')}
+              onNewHost={() => {
+                setEditingHost(null);
+                setIsHostModalOpen(true);
+              }}
+            />
+          )}
 
           {/* Tunnels View */}
           {currentView === 'tunnels' && (

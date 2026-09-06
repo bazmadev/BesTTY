@@ -138,6 +138,10 @@ export const en = {
     contextSelectAll: 'Select all',
     next: 'Next',
     sessionClosed: '[Session closed by remote host]',
+    resizerTooltip: 'Drag to resize (double-click to reset)',
+    dockLeft: 'Dock to Left',
+    dockRight: 'Dock to Right',
+    closeSidebar: 'Close panel',
   },
   sftp: {
     parentFolder: 'Go to Parent Folder (..)',
