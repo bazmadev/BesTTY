@@ -23,3 +23,6 @@ out
 
 # Local vault test files
 *.enc
+
+# Packaging output
+release/
