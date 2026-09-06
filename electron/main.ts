@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, clipboard } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { VaultManager } from './vault/VaultManager';
 import { SSHClientManager } from './ssh/SSHClientManager';
 import { SFTPManager } from './ssh/SFTPManager';
@@ -17,6 +18,15 @@ const tunnelManager = new TunnelManager(sshManager);
 const autoUpdaterManager = new AutoUpdaterManager();
 
 function createWindow() {
+  const iconCandidates = [
+    path.join(__dirname, '../../public/icon.png'),
+    path.join(__dirname, '../../public/logo.png'),
+    path.join(app.getAppPath(), 'public/icon.png'),
+    path.join(app.getAppPath(), 'dist/icon.png'),
+    path.join(app.getAppPath(), 'public/logo.png'),
+  ];
+  const iconPath = iconCandidates.find((p) => fs.existsSync(p));
+
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
@@ -24,6 +34,7 @@ function createWindow() {
     minHeight: 640,
     frame: false, // Custom modern Windows 11 title bar
     backgroundColor: '#181818',
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,

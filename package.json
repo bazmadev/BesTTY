@@ -75,6 +75,7 @@
       "repo": "bestty"
     },
     "win": {
+      "icon": "public/icon.png",
       "target": [
         "nsis"
       ]

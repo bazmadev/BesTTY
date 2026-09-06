@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { BesTTYSettings, UpdateState } from '../types';
 import { useTranslation, SupportedLocale } from '../i18n';
-import { Settings, Shield, Terminal, Palette, FolderTree, Check, Save, Languages, Sun, Moon, Download, RefreshCw, Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { Settings, Shield, Terminal, Palette, FolderTree, Check, Save, Languages, Sun, Moon, Download, RefreshCw, Loader2, Sparkles, AlertCircle, Heart } from 'lucide-react';
 
 interface SettingsViewProps {
   settings: BesTTYSettings;
   isLight?: boolean;
   onSaveSettings: (settings: Partial<BesTTYSettings>) => void;
   onSetupVault: () => void;
+  onOpenAbout?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -15,6 +16,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   isLight = false,
   onSaveSettings,
   onSetupVault,
+  onOpenAbout,
 }) => {
   const { t, locale, setLocale } = useTranslation();
   const [localSettings, setLocalSettings] = useState<BesTTYSettings>(settings);
@@ -464,6 +466,71 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               )}
               <span>{updateState.status === 'checking' ? t('updater.checking') : t('updater.checkNow')}</span>
             </button>
+          </div>
+        </div>
+
+        {/* About & Support / Mission & Donation Section */}
+        <div className={`border rounded-xl p-5 space-y-4 shadow-sm relative overflow-hidden ${
+          isLight ? 'bg-white border-slate-200' : 'bg-[#202020] border-[#303030]'
+        }`}>
+          <div className="flex items-start justify-between">
+            <div className="flex items-center space-x-3.5">
+              <img
+                src="/logo.png"
+                alt="BesTTY"
+                className="w-12 h-12 rounded-xl object-contain drop-shadow-md border border-white/10"
+              />
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-sm font-bold font-mono">BesTTY</h3>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/20 font-medium">
+                    v{updateState.currentVersion || '1.0.0'}
+                  </span>
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                    Open Source
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5 max-w-md">
+                  {t('about.tagline')}
+                </p>
+              </div>
+            </div>
+
+            {onOpenAbout && (
+              <button
+                type="button"
+                onClick={onOpenAbout}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow transition-all flex items-center space-x-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{t('about.title')}</span>
+              </button>
+            )}
+          </div>
+
+          <div className={`p-3.5 rounded-lg border text-xs flex items-center justify-between ${
+            isLight ? 'bg-rose-50/70 border-rose-200' : 'bg-rose-950/20 border-rose-500/20'
+          }`}>
+            <div className="space-y-0.5">
+              <span className="font-semibold text-rose-500 flex items-center space-x-1.5">
+                <Heart className="w-4 h-4 fill-rose-500" />
+                <span>{t('about.donateTitle')}</span>
+              </span>
+              <p className="text-[11px] text-slate-400 max-w-lg">
+                {t('about.donateSubtitle')}
+              </p>
+            </div>
+
+            {onOpenAbout && (
+              <button
+                type="button"
+                onClick={onOpenAbout}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white shadow-md transition-all flex items-center space-x-1.5 flex-shrink-0"
+              >
+                <Heart className="w-3.5 h-3.5 fill-white" />
+                <span>{t('about.donateTitle')}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

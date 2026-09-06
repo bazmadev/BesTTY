@@ -14,6 +14,7 @@ import { EmptyStateView } from './components/EmptyStateView';
 import { VaultModal } from './components/VaultModal';
 import { PasswordPromptModal, AuthPromptResult } from './components/PasswordPromptModal';
 import { HelpModal } from './components/HelpModal';
+import { AboutModal } from './components/AboutModal';
 import { TabItem, TabType, HostProfile, Snippet, TunnelConfig, BesTTYSettings, VaultStatus, UpdateState } from './types';
 import { I18nProvider, useTranslation } from './i18n';
 import { parseSSHConnectionString } from './utils/sshParser';
@@ -26,6 +27,9 @@ const MainApp: React.FC = () => {
   const [tabs, setTabs] = useState<TabItem[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>('hosts-view');
   const [currentView, setCurrentView] = useState<'hosts' | TabType>('hosts');
+
+  // About Modal State
+  const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
 
   // Vault & Data State
   const [vaultStatus, setVaultStatus] = useState<VaultStatus>({ isConfigured: false, isUnlocked: true });
@@ -400,6 +404,7 @@ const MainApp: React.FC = () => {
         onDuplicateTab={() => handleDuplicateSession()}
         onOpenHelp={() => setIsHelpModalOpen(true)}
         onOpenSettings={() => setCurrentView('settings')}
+        onOpenAbout={() => setIsAboutModalOpen(true)}
       />
 
       {/* Main App Workspace */}
@@ -621,6 +626,7 @@ const MainApp: React.FC = () => {
                 setSettings(await window.api.vault.getSettings());
               }}
               onSetupVault={() => setIsVaultModalOpen(true)}
+              onOpenAbout={() => setIsAboutModalOpen(true)}
             />
           )}
         </div>
@@ -683,13 +689,20 @@ const MainApp: React.FC = () => {
           )}
         </div>
 
-        {/* Right: Encoding, Terminal type, and App version */}
+        {/* Right: Encoding, Terminal type, and App version with Logo */}
         <div className="flex items-center space-x-3 font-mono text-[10px]">
           <span className="text-slate-500">UTF-8</span>
           <span className="text-slate-500">xterm-256color</span>
-          <span className="font-semibold text-sky-400">
-            BesTTY v{updateState.currentVersion || '1.0.0'}
-          </span>
+          <div
+            onClick={() => setIsAboutModalOpen(true)}
+            className="flex items-center space-x-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+            title={t('about.title')}
+          >
+            <img src="/logo.png" alt="BesTTY" className="w-3.5 h-3.5 rounded object-contain" />
+            <span className="font-semibold text-sky-400">
+              BesTTY v{updateState.currentVersion || '1.0.0'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -727,6 +740,12 @@ const MainApp: React.FC = () => {
         isOpen={isHelpModalOpen}
         isLight={isLight}
         onClose={() => setIsHelpModalOpen(false)}
+      />
+
+      <AboutModal
+        isOpen={isAboutModalOpen}
+        isLight={isLight}
+        onClose={() => setIsAboutModalOpen(false)}
       />
     </div>
   );

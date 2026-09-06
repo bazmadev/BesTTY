@@ -15,6 +15,7 @@ interface TitleBarProps {
   onDuplicateTab?: () => void;
   onOpenHelp?: () => void;
   onOpenSettings?: () => void;
+  onOpenAbout?: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -29,6 +30,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onDuplicateTab,
   onOpenHelp,
   onOpenSettings,
+  onOpenAbout,
 }) => {
   const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -69,10 +71,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     }`}>
       {/* Brand & Tabs Region */}
       <div className="flex items-center space-x-2 flex-1 overflow-x-auto no-scrollbar pr-4 titlebar-drag-region">
-        <div className="flex items-center space-x-2 px-2 py-1 titlebar-drag-region cursor-default">
-          <div className="w-5 h-5 rounded-md bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center font-bold text-xs text-white shadow-sm">
-            B
-          </div>
+        <div
+          onClick={onOpenAbout}
+          className="flex items-center space-x-2 px-2 py-1 titlebar-no-drag cursor-pointer hover:opacity-80 transition-opacity group"
+          title={t('about.title')}
+        >
+          <img
+            src="/logo.png"
+            alt="BesTTY"
+            className="w-5 h-5 rounded object-contain drop-shadow shadow-sky-500/20 group-hover:scale-105 transition-transform"
+          />
           <span className="font-semibold text-xs tracking-wide font-mono hidden sm:inline">
             BesTTY
           </span>
