@@ -157,6 +157,7 @@ export const ru: TranslationDictionary = {
     saved: 'Сохранено!',
     language: 'Язык интерфейса',
     theme: 'Тема оформления',
+    themeSystem: 'Системная (Windows)',
     themeDark: 'Fluent Темная (Windows 11 Dark)',
     themeLight: 'Fluent Светлая (Windows 11 Light)',
     smarttyFeatures: 'Интеграция SmarTTY Smart Bash',

@@ -7,27 +7,31 @@ import '@xterm/xterm/css/xterm.css';
 import { HostProfile, SFTPFile } from '../types';
 import { useTranslation } from '../i18n';
 import { 
-  FolderTree, Activity, Search, X, RotateCcw, Trash2, 
+  FolderTree, Activity, Search, X, Trash2, 
   Folder, File, FileCode, FileArchive, FileText, CornerLeftUp, 
-  RotateCw, ChevronRight, ChevronLeft, Edit, Plus
+  RotateCw, ChevronRight, ChevronLeft, Edit, Zap, PanelLeft, PanelRight, Terminal as TerminalIcon
 } from 'lucide-react';
 
 interface TerminalViewProps {
   sessionId: string;
   host?: HostProfile;
   isLight?: boolean;
+  isActive?: boolean;
   onOpenSftp: () => void;
   onOpenMonitor: () => void;
   onOpenFileInEditor: (filePath: string, fileName: string) => void;
+  onDuplicateSession: () => void;
 }
 
 export const TerminalView: React.FC<TerminalViewProps> = ({
   sessionId,
   host,
   isLight = false,
+  isActive = true,
   onOpenSftp,
   onOpenMonitor,
   onOpenFileInEditor,
+  onDuplicateSession,
 }) => {
   const { t } = useTranslation();
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -39,8 +43,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isConnected, setIsConnected] = useState(true);
 
-  // SmarTTY Killer Feature: Collapsible SFTP Sidebar inside the Terminal Tab!
+  // SmarTTY Features:
   const [showSftpSidebar, setShowSftpSidebar] = useState(true);
+  const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
   const [sftpPath, setSftpPath] = useState(host?.defaultPath || '/');
   const [sftpFiles, setSftpFiles] = useState<SFTPFile[]>([]);
   const [isSftpLoading, setIsSftpLoading] = useState(false);
@@ -56,7 +61,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         setSftpFiles(res.files);
       }
     } catch (e) {
-      // Ignore if not ready yet
+      // Ignore
     } finally {
       setIsSftpLoading(false);
     }
@@ -141,15 +146,20 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     term.loadAddon(webLinksAddon);
 
     term.open(terminalRef.current);
-    fitAddon.fit();
+
+    // Initial safe fit
+    setTimeout(() => {
+      try {
+        fitAddon.fit();
+        if (term.cols > 10 && term.rows > 4 && window.api?.ssh) {
+          window.api.ssh.resize(sessionId, term.cols, term.rows);
+        }
+      } catch (e) {}
+    }, 50);
 
     xtermInstance.current = term;
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
-
-    if (window.api?.ssh) {
-      window.api.ssh.resize(sessionId, term.cols, term.rows);
-    }
 
     const onDataDispose = term.onData((data) => {
       window.api?.ssh.write(sessionId, data);
@@ -168,7 +178,13 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       }
     });
 
-    // SmarTTY Killer Feature: OSC 7 auto-navigates sidebar when user does `cd` in terminal!
+    const unsubscribeError = window.api?.ssh.onError((payload) => {
+      if (payload.sessionId === sessionId) {
+        term.write(`\r\n\x1b[31m[SSH Error]: ${payload.error}\x1b[0m\r\n`);
+      }
+    });
+
+    // OSC 7 directory tracking
     const unsubscribeDir = window.api?.ssh.onDirectoryChanged((payload) => {
       if (payload.sessionId === sessionId && payload.directory) {
         setSftpPath(payload.directory);
@@ -176,14 +192,17 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       }
     });
 
-    const resizeObserver = new ResizeObserver(() => {
-      try {
-        fitAddon.fit();
-        if (window.api?.ssh && term.cols > 0 && term.rows > 0) {
-          window.api.ssh.resize(sessionId, term.cols, term.rows);
+    // Safe ResizeObserver
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 50 && entry.contentRect.height > 50) {
+          try {
+            fitAddon.fit();
+            if (term.cols > 10 && term.rows > 4 && window.api?.ssh) {
+              window.api.ssh.resize(sessionId, term.cols, term.rows);
+            }
+          } catch (e) {}
         }
-      } catch (e) {
-        // ignore
       }
     });
 
@@ -203,10 +222,28 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       onDataDispose.dispose();
       unsubscribeData?.();
       unsubscribeClosed?.();
+      unsubscribeError?.();
       unsubscribeDir?.();
       term.dispose();
     };
   }, [sessionId, isLight]);
+
+  // Handle Tab Visibility Changes: prevent terminal from shifting upwards!
+  useEffect(() => {
+    if (isActive && xtermInstance.current && fitAddonRef.current) {
+      setTimeout(() => {
+        try {
+          fitAddonRef.current?.fit();
+          const term = xtermInstance.current;
+          if (term && term.cols > 10 && term.rows > 4) {
+            window.api?.ssh.resize(sessionId, term.cols, term.rows);
+            term.scrollToBottom();
+            term.focus();
+          }
+        } catch (e) {}
+      }, 60);
+    }
+  }, [isActive]);
 
   const handleSearchNext = () => {
     if (searchAddonRef.current && searchQuery) {
@@ -232,6 +269,12 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     } else {
       onOpenFileInEditor(file.path, file.name);
     }
+  };
+
+  // Open folder directly in active terminal
+  const handleOpenFolderInTerminal = (folderPath: string) => {
+    window.api?.ssh.write(sessionId, `cd "${folderPath}"\n`);
+    xtermInstance.current?.focus();
   };
 
   const formatSize = (bytes: number) => {
@@ -262,6 +305,140 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     f.name.toLowerCase().includes(sftpFilter.toLowerCase())
   );
 
+  // Render SFTP Sidebar Component
+  const renderSftpSidebar = () => (
+    <div className={`w-72 flex flex-col h-full select-none shadow-lg z-10 transition-all ${
+      sidebarPosition === 'right' ? 'border-l' : 'border-r'
+    } ${
+      isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#1c1c1c] border-[#2c2c2c]'
+    }`}>
+      {/* Sidebar Header & Path Navigation */}
+      <div className={`p-2 border-b flex flex-col space-y-1.5 ${
+        isLight ? 'bg-[#ececec] border-[#e0e0e0]' : 'bg-[#222222] border-[#2c2c2c]'
+      }`}>
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-1">
+            <FolderTree className="w-3.5 h-3.5" />
+            <span>Remote Files</span>
+          </span>
+          <div className="flex items-center space-x-1">
+            {/* Position Switch (Left / Right) */}
+            <button
+              onClick={() => {
+                setSidebarPosition(sidebarPosition === 'left' ? 'right' : 'left');
+                setTimeout(() => fitAddonRef.current?.fit(), 100);
+              }}
+              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
+              title={sidebarPosition === 'left' ? 'Dock to Right' : 'Dock to Left'}
+            >
+              {sidebarPosition === 'left' ? <PanelRight className="w-3.5 h-3.5" /> : <PanelLeft className="w-3.5 h-3.5" />}
+            </button>
+
+            <button
+              onClick={handleSidebarNavigateUp}
+              disabled={sftpPath === '/' || sftpPath === ''}
+              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white disabled:opacity-30"
+              title={t('sftp.parentFolder')}
+            >
+              <CornerLeftUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => loadSidebarDirectory(sftpPath)}
+              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
+              title={t('sftp.refresh')}
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${isSftpLoading ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={() => {
+                setShowSftpSidebar(false);
+                setTimeout(() => fitAddonRef.current?.fit(), 100);
+              }}
+              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
+              title="Close Sidebar"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Path Breadcrumb Display */}
+        <div className={`px-2 py-0.5 rounded text-[10px] font-mono truncate border ${
+          isLight ? 'bg-white text-slate-700 border-slate-300' : 'bg-[#161616] text-slate-300 border-[#333]'
+        }`} title={sftpPath}>
+          {sftpPath}
+        </div>
+
+        {/* Quick Filter */}
+        <input
+          type="text"
+          placeholder={t('sftp.filterFiles')}
+          value={sftpFilter}
+          onChange={(e) => setSftpFilter(e.target.value)}
+          className={`w-full px-2 py-0.5 text-[11px] rounded border focus:outline-none focus:border-sky-500 ${
+            isLight ? 'bg-white text-slate-900 border-slate-300' : 'bg-[#181818] text-white border-[#333]'
+          }`}
+        />
+      </div>
+
+      {/* Sidebar File Tree */}
+      <div className="flex-1 overflow-y-auto divide-y divide-slate-500/10 text-xs font-mono">
+        {filteredSidebarFiles.length === 0 ? (
+          <div className="p-4 text-center text-[11px] text-slate-500">
+            {isSftpLoading ? 'Loading...' : 'Folder is empty'}
+          </div>
+        ) : (
+          filteredSidebarFiles.map((file) => (
+            <div
+              key={file.path}
+              onDoubleClick={() => handleSidebarFileClick(file)}
+              className={`flex items-center justify-between px-2 py-1.5 cursor-pointer group transition-colors ${
+                isLight ? 'hover:bg-slate-200/80 text-slate-800' : 'hover:bg-[#252525] text-slate-200'
+              }`}
+            >
+              <div className="flex items-center space-x-1.5 truncate flex-1 mr-1">
+                {getFileIcon(file)}
+                <span className="truncate text-[11px] font-sans group-hover:font-medium">
+                  {file.name}
+                </span>
+              </div>
+
+              <div className="flex items-center space-x-1 text-[10px] text-slate-400 flex-shrink-0">
+                {/* Button to cd into directory in terminal! */}
+                {file.isDirectory && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenFolderInTerminal(file.path);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-sky-500/20 text-sky-400 rounded flex items-center space-x-0.5"
+                    title={`Open in Terminal (cd "${file.path}")`}
+                  >
+                    <TerminalIcon className="w-3 h-3" />
+                  </button>
+                )}
+
+                <span>{formatSize(file.size)}</span>
+                {!file.isDirectory && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenFileInEditor(file.path, file.name);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-sky-500/20 text-sky-400 rounded"
+                    title="Open in Monaco Editor"
+                  >
+                    <Edit className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden relative ${
       isLight ? 'bg-[#fafafa] text-slate-800' : 'bg-[#181818] text-slate-100'
@@ -285,6 +462,16 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
 
         {/* Action buttons */}
         <div className="flex items-center space-x-1">
+          {/* Duplicate Session Magic Lightning Button (SmarTTY) */}
+          <button
+            onClick={onDuplicateSession}
+            className="flex items-center space-x-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 text-[11px] font-semibold transition-all shadow-sm"
+            title="Duplicate Tab: Open a new parallel terminal to this server"
+          >
+            <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+            <span className="hidden sm:inline">Duplicate</span>
+          </button>
+
           {/* SmarTTY Sidebar Toggle Button */}
           <button
             onClick={() => {
@@ -366,113 +553,11 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         </div>
       )}
 
-      {/* Main Container: Terminal + SmarTTY Collapsible SFTP Sidebar */}
+      {/* Main Split Layout: Sidebar Left or Right + Terminal Canvas */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Terminal Canvas */}
+        {showSftpSidebar && sidebarPosition === 'left' && renderSftpSidebar()}
         <div ref={terminalRef} className="flex-1 h-full p-1 overflow-hidden" />
-
-        {/* SmarTTY Integrated SFTP Sidebar */}
-        {showSftpSidebar && (
-          <div className={`w-72 border-l flex flex-col h-full select-none shadow-lg z-10 transition-all ${
-            isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#1c1c1c] border-[#2c2c2c]'
-          }`}>
-            {/* Sidebar Header & Path Navigation */}
-            <div className={`p-2 border-b flex flex-col space-y-1.5 ${
-              isLight ? 'bg-[#ececec] border-[#e0e0e0]' : 'bg-[#222222] border-[#2c2c2c]'
-            }`}>
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-1">
-                  <FolderTree className="w-3.5 h-3.5" />
-                  <span>Remote Explorer</span>
-                </span>
-                <div className="flex items-center space-x-1">
-                  <button
-                    onClick={handleSidebarNavigateUp}
-                    disabled={sftpPath === '/' || sftpPath === ''}
-                    className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white disabled:opacity-30"
-                    title={t('sftp.parentFolder')}
-                  >
-                    <CornerLeftUp className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => loadSidebarDirectory(sftpPath)}
-                    className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-                    title={t('sftp.refresh')}
-                  >
-                    <RotateCw className={`w-3.5 h-3.5 ${isSftpLoading ? 'animate-spin' : ''}`} />
-                  </button>
-                  <button
-                    onClick={() => setShowSftpSidebar(false)}
-                    className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-                    title="Collapse Sidebar"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Path Breadcrumb Display */}
-              <div className={`px-2 py-0.5 rounded text-[10px] font-mono truncate border ${
-                isLight ? 'bg-white text-slate-700 border-slate-300' : 'bg-[#161616] text-slate-300 border-[#333]'
-              }`} title={sftpPath}>
-                {sftpPath}
-              </div>
-
-              {/* Quick Filter */}
-              <input
-                type="text"
-                placeholder={t('sftp.filterFiles')}
-                value={sftpFilter}
-                onChange={(e) => setSftpFilter(e.target.value)}
-                className={`w-full px-2 py-0.5 text-[11px] rounded border focus:outline-none focus:border-sky-500 ${
-                  isLight ? 'bg-white text-slate-900 border-slate-300' : 'bg-[#181818] text-white border-[#333]'
-                }`}
-              />
-            </div>
-
-            {/* Sidebar File Tree */}
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-500/10 text-xs font-mono">
-              {filteredSidebarFiles.length === 0 ? (
-                <div className="p-4 text-center text-[11px] text-slate-500">
-                  {isSftpLoading ? 'Loading...' : 'Folder is empty'}
-                </div>
-              ) : (
-                filteredSidebarFiles.map((file) => (
-                  <div
-                    key={file.path}
-                    onDoubleClick={() => handleSidebarFileClick(file)}
-                    className={`flex items-center justify-between px-2 py-1.5 cursor-pointer group transition-colors ${
-                      isLight ? 'hover:bg-slate-200/80 text-slate-800' : 'hover:bg-[#252525] text-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-1.5 truncate flex-1 mr-2">
-                      {getFileIcon(file)}
-                      <span className="truncate text-[11px] font-sans group-hover:font-medium">
-                        {file.name}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center space-x-1 text-[10px] text-slate-400 flex-shrink-0">
-                      <span>{formatSize(file.size)}</span>
-                      {!file.isDirectory && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenFileInEditor(file.path, file.name);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-sky-500/20 text-sky-400 rounded"
-                          title="Open in Monaco Editor"
-                        >
-                          <Edit className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
+        {showSftpSidebar && sidebarPosition === 'right' && renderSftpSidebar()}
       </div>
     </div>
   );

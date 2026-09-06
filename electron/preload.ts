@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('ssh:closed', handler);
       return () => ipcRenderer.removeListener('ssh:closed', handler);
     },
+    onError: (callback: (payload: { sessionId: string; error: string }) => void) => {
+      const handler = (_: any, payload: any) => callback(payload);
+      ipcRenderer.on('ssh:error', handler);
+      return () => ipcRenderer.removeListener('ssh:error', handler);
+    },
     onDirectoryChanged: (callback: (payload: { sessionId: string; directory: string }) => void) => {
       const handler = (_: any, payload: any) => callback(payload);
       ipcRenderer.on('ssh:directory-changed', handler);

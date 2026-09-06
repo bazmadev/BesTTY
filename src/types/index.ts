@@ -102,7 +102,7 @@ export interface Snippet {
 
 export interface BesTTYSettings {
   locale: 'en' | 'ru';
-  theme: 'fluent-dark' | 'fluent-light' | 'dracula' | 'one-dark' | 'nord';
+  theme: 'system' | 'fluent-dark' | 'fluent-light' | 'dracula' | 'one-dark' | 'nord';
   fontFamily: string;
   fontSize: number;
   cursorStyle: 'block' | 'underline' | 'bar';

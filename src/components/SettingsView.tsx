@@ -113,30 +113,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* Theme Selector */}
             <div>
               <label className="block text-xs text-slate-400 mb-1 font-medium">{t('settings.theme')}</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleThemeChange('system')}
+                  className={`py-2 px-2 rounded-lg text-xs font-medium border flex items-center justify-center space-x-1.5 transition-all ${
+                    localSettings.theme === 'system'
+                      ? 'bg-sky-600 text-white border-sky-500 shadow'
+                      : isLight ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-[#272727] border-[#3d3d3d] text-slate-300 hover:bg-[#333]'
+                  }`}
+                >
+                  <Palette className="w-3.5 h-3.5" />
+                  <span className="truncate">{t('settings.themeSystem')}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleThemeChange('fluent-dark')}
-                  className={`py-2 px-3 rounded-lg text-xs font-medium border flex items-center justify-center space-x-2 transition-all ${
+                  className={`py-2 px-2 rounded-lg text-xs font-medium border flex items-center justify-center space-x-1.5 transition-all ${
                     localSettings.theme === 'fluent-dark'
                       ? 'bg-sky-600 text-white border-sky-500 shadow'
                       : isLight ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-[#272727] border-[#3d3d3d] text-slate-300 hover:bg-[#333]'
                   }`}
                 >
                   <Moon className="w-3.5 h-3.5" />
-                  <span>{t('settings.themeDark')}</span>
+                  <span className="truncate">{t('settings.themeDark')}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleThemeChange('fluent-light')}
-                  className={`py-2 px-3 rounded-lg text-xs font-medium border flex items-center justify-center space-x-2 transition-all ${
+                  className={`py-2 px-2 rounded-lg text-xs font-medium border flex items-center justify-center space-x-1.5 transition-all ${
                     localSettings.theme === 'fluent-light'
                       ? 'bg-sky-600 text-white border-sky-500 shadow'
                       : isLight ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-[#272727] border-[#3d3d3d] text-slate-300 hover:bg-[#333]'
                   }`}
                 >
                   <Sun className="w-3.5 h-3.5" />
-                  <span>{t('settings.themeLight')}</span>
+                  <span className="truncate">{t('settings.themeLight')}</span>
                 </button>
               </div>
             </div>

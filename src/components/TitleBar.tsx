@@ -1,24 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { TabItem } from '../types';
 import { useTranslation } from '../i18n';
-import { Terminal, FolderTree, Code, Activity, Network, Settings, X, Plus, Minus, Square, Copy } from 'lucide-react';
+import { Terminal, FolderTree, Code, Activity, Network, Settings, X, Plus, Minus, Square, Copy, Zap } from 'lucide-react';
 
 interface TitleBarProps {
   tabs: TabItem[];
   activeTabId: string;
   isLight?: boolean;
+  canDuplicate?: boolean;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
+  onDuplicateTab?: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
   tabs,
   activeTabId,
   isLight = false,
+  canDuplicate = false,
   onSelectTab,
   onCloseTab,
   onNewTab,
+  onDuplicateTab,
 }) => {
   const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -118,6 +122,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           >
             <Plus className="w-4 h-4" />
           </button>
+
+          {canDuplicate && onDuplicateTab && (
+            <button
+              onClick={onDuplicateTab}
+              className="p-1.5 rounded-md text-amber-500 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
+              title="Duplicate Session: Open a new tab to current host (SmarTTY)"
+            >
+              <Zap className="w-4 h-4 fill-amber-500 text-amber-500" />
+            </button>
+          )}
         </div>
       </div>
 

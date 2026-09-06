@@ -26,6 +26,7 @@ declare global {
         disconnect: (sessionId: string) => Promise<void>;
         onData: (callback: (payload: { sessionId: string; data: string }) => void) => () => void;
         onClosed: (callback: (payload: { sessionId: string }) => void) => () => void;
+        onError: (callback: (payload: { sessionId: string; error: string }) => void) => () => void;
         onDirectoryChanged: (callback: (payload: { sessionId: string; directory: string }) => void) => () => void;
       };
       sftp: {

@@ -42,6 +42,14 @@ function createWindow() {
     mainWindow?.webContents.send('ssh:data', payload);
   });
 
+  sshManager.on('ssh-error', (payload) => {
+    mainWindow?.webContents.send('ssh:error', payload);
+  });
+
+  sshManager.on('error', (payload) => {
+    mainWindow?.webContents.send('ssh:error', payload);
+  });
+
   sshManager.on('closed', (payload) => {
     mainWindow?.webContents.send('ssh:closed', payload);
     monitorService.stopMonitoring(payload.sessionId);

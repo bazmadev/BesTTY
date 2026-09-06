@@ -11,6 +11,7 @@ import { TunnelsView } from './components/TunnelsView';
 import { SnippetsView } from './components/SnippetsView';
 import { SettingsView } from './components/SettingsView';
 import { VaultModal } from './components/VaultModal';
+import { PasswordPromptModal } from './components/PasswordPromptModal';
 import { TabItem, TabType, HostProfile, Snippet, TunnelConfig, BesTTYSettings, VaultStatus } from './types';
 import { I18nProvider, useTranslation } from './i18n';
 
@@ -30,7 +31,7 @@ const MainApp: React.FC = () => {
   const [tunnels, setTunnels] = useState<TunnelConfig[]>([]);
   const [settings, setSettings] = useState<BesTTYSettings>({
     locale: 'ru',
-    theme: 'fluent-dark',
+    theme: 'system',
     fontFamily: 'Cascadia Code, Consolas, monospace',
     fontSize: 14,
     cursorStyle: 'block',
@@ -41,7 +42,21 @@ const MainApp: React.FC = () => {
     enableHardwareAcceleration: true,
   });
 
-  const isLight = settings.theme === 'fluent-light';
+  // Windows System Theme Detection
+  const [systemDark, setSystemDark] = useState<boolean>(
+    window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)').matches : true
+  );
+
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const listener = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    media.addEventListener('change', listener);
+    return () => media.removeEventListener('change', listener);
+  }, []);
+
+  const isLight =
+    settings.theme === 'system' ? !systemDark : settings.theme === 'fluent-light';
 
   useEffect(() => {
     if (isLight) {
@@ -53,9 +68,14 @@ const MainApp: React.FC = () => {
     }
   }, [isLight]);
 
-  // Host Management Modals
+  // Modals State
   const [isHostModalOpen, setIsHostModalOpen] = useState(false);
   const [editingHost, setEditingHost] = useState<HostProfile | null>(null);
+
+  // Quick Password Prompt State
+  const [pendingPromptHost, setPendingPromptHost] = useState<HostProfile | null>(null);
+  const [isPasswordPromptOpen, setIsPasswordPromptOpen] = useState(false);
+  const [pendingInitialTab, setPendingInitialTab] = useState<TabType>('terminal');
 
   // Active SSH Sessions cache: sessionId -> HostProfile
   const [activeSessions, setActiveSessions] = useState<Map<string, HostProfile>>(new Map());
@@ -92,6 +112,18 @@ const MainApp: React.FC = () => {
 
   // Connect to Host
   const handleConnect = async (host: HostProfile, initialTabType: TabType = 'terminal') => {
+    // If password auth and password is empty, and no private key, prompt user for password
+    if (host.authType === 'password' && !host.password && !host.privateKeyPath && !host.privateKeyContent) {
+      setPendingPromptHost(host);
+      setPendingInitialTab(initialTabType);
+      setIsPasswordPromptOpen(true);
+      return;
+    }
+
+    await executeConnection(host, initialTabType);
+  };
+
+  const executeConnection = async (host: HostProfile, initialTabType: TabType = 'terminal') => {
     const sessionId = crypto.randomUUID();
 
     try {
@@ -113,6 +145,35 @@ const MainApp: React.FC = () => {
       setCurrentView(initialTabType);
     } catch (err: any) {
       alert(`SSH Connection Failed to ${host.host}: ${err.message}`);
+    }
+  };
+
+  const handlePasswordPromptSubmit = async (password: string, remember: boolean) => {
+    if (!pendingPromptHost) return;
+
+    const hostWithPassword: HostProfile = {
+      ...pendingPromptHost,
+      password,
+    };
+
+    if (remember) {
+      await handleSaveHost(hostWithPassword);
+    }
+
+    setIsPasswordPromptOpen(false);
+    await executeConnection(hostWithPassword, pendingInitialTab);
+    setPendingPromptHost(null);
+  };
+
+  // SmarTTY Duplicate Tab Feature (⚡ Lightning button)
+  const handleDuplicateSession = (targetSessionId?: string) => {
+    const activeTab = tabs.find((t) => t.id === activeTabId);
+    const sid = targetSessionId || activeTab?.sessionId;
+    if (!sid) return;
+
+    const host = activeSessions.get(sid);
+    if (host) {
+      executeConnection(host, 'terminal');
     }
   };
 
@@ -255,6 +316,7 @@ const MainApp: React.FC = () => {
   };
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
+  const canDuplicate = Boolean(activeTab?.sessionId && activeSessions.has(activeTab.sessionId));
 
   return (
     <div className={`flex flex-col h-screen w-screen overflow-hidden ${
@@ -265,6 +327,7 @@ const MainApp: React.FC = () => {
         tabs={tabs}
         activeTabId={activeTabId}
         isLight={isLight}
+        canDuplicate={canDuplicate}
         onSelectTab={(id) => {
           setActiveTabId(id);
           const t = tabs.find((item) => item.id === id);
@@ -275,6 +338,7 @@ const MainApp: React.FC = () => {
           setCurrentView('hosts');
           setActiveTabId('hosts-view');
         }}
+        onDuplicateTab={() => handleDuplicateSession()}
       />
 
       {/* Main App Workspace */}
@@ -317,19 +381,32 @@ const MainApp: React.FC = () => {
             />
           )}
 
-          {/* Active Terminal Tab View with SmarTTY Sidebar */}
-          {currentView === 'terminal' && activeTab && activeTab.sessionId && (
-            <TerminalView
-              sessionId={activeTab.sessionId}
-              host={activeSessions.get(activeTab.sessionId)}
-              isLight={isLight}
-              onOpenSftp={() => handleOpenSftp(activeTab.sessionId!)}
-              onOpenMonitor={() => handleOpenMonitor(activeTab.sessionId!)}
-              onOpenFileInEditor={(filePath, fileName) =>
-                handleOpenFileInEditor(activeTab.sessionId!, filePath, fileName)
-              }
-            />
-          )}
+          {/* Persistent Terminal Views Container (Keeps DOM alive across tab switches!) */}
+          {tabs
+            .filter((t) => t.type === 'terminal' && t.sessionId)
+            .map((tab) => {
+              const isTabActive = currentView === 'terminal' && activeTabId === tab.id;
+              return (
+                <div
+                  key={tab.sessionId}
+                  className="w-full h-full"
+                  style={{ display: isTabActive ? 'flex' : 'none' }}
+                >
+                  <TerminalView
+                    sessionId={tab.sessionId!}
+                    host={activeSessions.get(tab.sessionId!)}
+                    isLight={isLight}
+                    isActive={isTabActive}
+                    onOpenSftp={() => handleOpenSftp(tab.sessionId!)}
+                    onOpenMonitor={() => handleOpenMonitor(tab.sessionId!)}
+                    onOpenFileInEditor={(filePath, fileName) =>
+                      handleOpenFileInEditor(tab.sessionId!, filePath, fileName)
+                    }
+                    onDuplicateSession={() => handleDuplicateSession(tab.sessionId)}
+                  />
+                </div>
+              );
+            })}
 
           {/* Active SFTP Tab View */}
           {currentView === 'sftp' && activeTab && activeTab.sessionId && (
@@ -430,6 +507,16 @@ const MainApp: React.FC = () => {
         onClose={() => setIsVaultModalOpen(false)}
         vaultStatus={vaultStatus}
         onUnlockSuccess={loadVaultData}
+      />
+
+      <PasswordPromptModal
+        isOpen={isPasswordPromptOpen}
+        host={pendingPromptHost}
+        onClose={() => {
+          setIsPasswordPromptOpen(false);
+          setPendingPromptHost(null);
+        }}
+        onSubmit={handlePasswordPromptSubmit}
       />
     </div>
   );

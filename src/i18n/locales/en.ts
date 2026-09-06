@@ -155,6 +155,7 @@ export const en = {
     saved: 'Saved!',
     language: 'Interface Language',
     theme: 'Application Theme',
+    themeSystem: 'System (Windows)',
     themeDark: 'Fluent Dark (Windows 11 Dark)',
     themeLight: 'Fluent Light (Windows 11 Light)',
     smarttyFeatures: 'SmarTTY Smart Bash Integration',
