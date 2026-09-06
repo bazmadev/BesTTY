@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { HostProfile, AuthType } from '../types';
 import { useTranslation } from '../i18n';
 import { parseSSHConnectionString } from '../utils/sshParser';
-import { X, Key, Lock, Terminal, Shield, ChevronDown, ChevronUp, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { X, Key, Lock, Terminal, Shield, ChevronDown, ChevronUp, Eye, EyeOff, Sparkles, FolderOpen, HelpCircle } from 'lucide-react';
 
 interface HostModalProps {
   isOpen: boolean;
   isLight?: boolean;
   onClose: () => void;
   onSave: (host: HostProfile) => void;
+  onOpenHelp?: () => void;
   hostToEdit?: HostProfile | null;
   availableHosts: HostProfile[];
 }
@@ -18,6 +19,7 @@ export const HostModal: React.FC<HostModalProps> = ({
   isLight = false,
   onClose,
   onSave,
+  onOpenHelp,
   hostToEdit,
   availableHosts,
 }) => {
@@ -136,12 +138,24 @@ export const HostModal: React.FC<HostModalProps> = ({
               {hostToEdit ? t('modal.editTitle') : t('modal.addTitle')}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-black/10 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-1">
+            {onOpenHelp && (
+              <button
+                type="button"
+                onClick={onOpenHelp}
+                className="p-1.5 rounded-md text-slate-400 hover:text-sky-500 hover:bg-sky-500/10 transition-colors"
+                title="Help"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-black/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Form Body */}
@@ -310,15 +324,33 @@ export const HostModal: React.FC<HostModalProps> = ({
                 <label className="block text-xs text-slate-400 mb-1 font-medium">
                   {t('modal.keyPath')}
                 </label>
-                <input
-                  type="text"
-                  placeholder="C:\Users\username\.ssh\id_ed25519"
-                  value={privateKeyPath}
-                  onChange={(e) => setPrivateKeyPath(e.target.value)}
-                  className={`w-full border rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-sky-500 ${
-                    isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
-                  }`}
-                />
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    placeholder="C:\Users\username\.ssh\id_ed25519"
+                    value={privateKeyPath}
+                    onChange={(e) => setPrivateKeyPath(e.target.value)}
+                    className={`flex-1 border rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-sky-500 ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const path = await window.api.dialog.openKeyFile();
+                      if (path) setPrivateKeyPath(path);
+                    }}
+                    className={`px-3 py-1.5 rounded-md border text-xs font-medium flex items-center space-x-1.5 transition-colors ${
+                      isLight
+                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                        : 'bg-[#2a2a2a] hover:bg-[#333] border-[#444] text-slate-200'
+                    }`}
+                    title={t('modal.browseKey')}
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    <span>{t('modal.browse')}</span>
+                  </button>
+                </div>
               </div>
 
               <div>

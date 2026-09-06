@@ -124,16 +124,18 @@ export const HostList: React.FC<HostListProps> = ({
 
             {/* Smart Decomposition Badge */}
             {preview && preview.host && (
-              <div className="flex items-center space-x-2 text-[11px] font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <div className={`flex items-center space-x-2 text-[11px] font-mono px-2.5 py-1 rounded-md border ${
+                isLight ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-sky-500/10 border-sky-500/20 text-sky-400'
+              }`}>
                 <Sparkles className="w-3 h-3 flex-shrink-0" />
                 <span>Auto-parsed:</span>
-                <span className="font-semibold text-white">proto:</span> <span>{preview.protocol}</span>
-                <span className="font-semibold text-white">user:</span> <span>{preview.username}</span>
-                <span className="font-semibold text-white">host:</span> <span>{preview.host}</span>
-                <span className="font-semibold text-white">port:</span> <span>{preview.port}</span>
+                <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>proto:</span> <span>{preview.protocol}</span>
+                <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>user:</span> <span>{preview.username}</span>
+                <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>host:</span> <span>{preview.host}</span>
+                <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>port:</span> <span>{preview.port}</span>
                 {preview.privateKeyPath && (
                   <>
-                    <span className="font-semibold text-white">key:</span> <span>{preview.privateKeyPath}</span>
+                    <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>key:</span> <span>{preview.privateKeyPath}</span>
                   </>
                 )}
               </div>
@@ -272,6 +274,28 @@ export const HostList: React.FC<HostListProps> = ({
                     </div>
                   </div>
                 ))}
+
+                {/* Dashed Add Host Card */}
+                <button
+                  type="button"
+                  onClick={onNewHost}
+                  className={`border-2 border-dashed rounded-xl p-5 transition-all flex flex-col items-center justify-center space-y-2 min-h-[140px] group cursor-pointer ${
+                    isLight
+                      ? 'border-slate-300 hover:border-sky-500 bg-white/60 hover:bg-sky-50/50 text-slate-500 hover:text-sky-600 shadow-sm'
+                      : 'border-[#333] hover:border-sky-500/60 bg-[#1e1e1e]/40 hover:bg-sky-500/5 text-slate-400 hover:text-sky-400'
+                  }`}
+                >
+                  <div
+                    className={`p-2.5 rounded-full transition-colors ${
+                      isLight
+                        ? 'bg-slate-100 group-hover:bg-sky-100 text-slate-600 group-hover:text-sky-600'
+                        : 'bg-[#272727] group-hover:bg-sky-500/20 text-slate-400 group-hover:text-sky-400'
+                    }`}
+                  >
+                    <Plus className="w-5 h-5" />
+                  </div>
+                  <span className="text-xs font-semibold">{t('hosts.newHost')}</span>
+                </button>
               </div>
             </div>
           ))

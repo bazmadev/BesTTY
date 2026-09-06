@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { VaultManager } from './vault/VaultManager';
 import { SSHClientManager } from './ssh/SSHClientManager';
@@ -160,6 +160,24 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('tunnels:isActive', (_, tunnelId) => {
     return tunnelManager.isTunnelActive(tunnelId);
+  });
+
+  // Native File Dialog
+  ipcMain.handle('dialog:openKeyFile', async () => {
+    if (!mainWindow) return null;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select SSH Private Key',
+      properties: ['openFile'],
+      filters: [
+        { name: 'All SSH Key Files (*.*)', extensions: ['*'] },
+        { name: 'PuTTY Private Keys (*.ppk)', extensions: ['ppk'] },
+        { name: 'OpenSSH / PEM Keys (*.pem, *.key, id_*)', extensions: ['pem', 'key', 'id_rsa', 'id_ed25519'] },
+      ],
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+    return null;
   });
 }
 

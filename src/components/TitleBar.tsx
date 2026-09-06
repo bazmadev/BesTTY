@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { TabItem } from '../types';
 import { useTranslation } from '../i18n';
-import { Terminal, FolderTree, Code, Activity, Network, Settings, X, Plus, Minus, Square, Copy, Zap } from 'lucide-react';
+import { Terminal, FolderTree, Code, Activity, Network, Settings, X, Plus, Minus, Square, Copy, Zap, HelpCircle } from 'lucide-react';
 
 interface TitleBarProps {
   tabs: TabItem[];
@@ -12,6 +12,7 @@ interface TitleBarProps {
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
   onDuplicateTab?: () => void;
+  onOpenHelp?: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -23,6 +24,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onCloseTab,
   onNewTab,
   onDuplicateTab,
+  onOpenHelp,
 }) => {
   const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -62,8 +64,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       isLight ? 'bg-[#f8f8f8] border-[#e2e2e2] text-slate-800' : 'bg-[#1f1f1f] border-[#2d2d2d] text-slate-200'
     }`}>
       {/* Brand & Tabs Region */}
-      <div className="flex items-center space-x-2 flex-1 overflow-x-auto no-scrollbar titlebar-no-drag pr-4">
-        <div className="flex items-center space-x-2 px-2 py-1 titlebar-drag-region">
+      <div className="flex items-center space-x-2 flex-1 overflow-x-auto no-scrollbar pr-4 titlebar-drag-region">
+        <div className="flex items-center space-x-2 px-2 py-1 titlebar-drag-region cursor-default">
           <div className="w-5 h-5 rounded-md bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center font-bold text-xs text-white shadow-sm">
             B
           </div>
@@ -73,14 +75,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </div>
 
         {/* Tab Items */}
-        <div className="flex items-center space-x-1 flex-1 overflow-x-auto">
+        <div className="flex items-center space-x-1 flex-1 overflow-x-auto titlebar-drag-region">
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId;
             return (
               <div
                 key={tab.id}
                 onClick={() => onSelectTab(tab.id)}
-                className={`group flex items-center space-x-2 px-3 py-1.5 rounded-t-lg text-xs cursor-pointer border-t-2 transition-all max-w-[200px] min-w-[120px] ${
+                className={`group flex items-center space-x-2 px-3 py-1.5 rounded-t-lg text-xs cursor-pointer border-t-2 transition-all max-w-[200px] min-w-[120px] titlebar-no-drag ${
                   isActive
                     ? isLight
                       ? 'bg-white border-sky-600 text-slate-900 font-medium shadow-sm'
@@ -115,7 +117,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
           <button
             onClick={onNewTab}
-            className={`p-1.5 rounded-md transition-colors ${
+            className={`p-1.5 rounded-md transition-colors titlebar-no-drag ${
               isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-[#2d2d2d]'
             }`}
             title={t('titlebar.newTab')}
@@ -126,7 +128,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           {canDuplicate && onDuplicateTab && (
             <button
               onClick={onDuplicateTab}
-              className="p-1.5 rounded-md text-amber-500 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
+              className="p-1.5 rounded-md text-amber-500 hover:text-amber-400 hover:bg-amber-500/20 transition-colors titlebar-no-drag"
               title="Duplicate Session: Open a new tab to current host (SmarTTY)"
             >
               <Zap className="w-4 h-4 fill-amber-500 text-amber-500" />
@@ -137,6 +139,17 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
       {/* Windows 11 Titlebar Controls */}
       <div className="flex items-center space-x-0 titlebar-no-drag">
+        {onOpenHelp && (
+          <button
+            onClick={onOpenHelp}
+            className={`w-9 h-10 flex items-center justify-center transition-colors ${
+              isLight ? 'text-slate-500 hover:text-sky-600 hover:bg-slate-200' : 'text-slate-400 hover:text-sky-400 hover:bg-white/10'
+            }`}
+            title={t('help.title')}
+          >
+            <HelpCircle className="w-4 h-4" />
+          </button>
+        )}
         <button
           onClick={handleMinimize}
           className={`w-11 h-10 flex items-center justify-center transition-colors ${

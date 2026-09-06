@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Snippet } from '../types';
+import { useTranslation } from '../i18n';
 import { BookmarkCheck, Play, Plus, Trash2, Edit2, Search, X, Terminal } from 'lucide-react';
 
 interface SnippetsViewProps {
   snippets: Snippet[];
+  isLight?: boolean;
   onRunSnippet: (command: string) => void;
   onSaveSnippet: (snippet: Snippet) => void;
   onDeleteSnippet: (id: string) => void;
@@ -12,11 +14,13 @@ interface SnippetsViewProps {
 
 export const SnippetsView: React.FC<SnippetsViewProps> = ({
   snippets,
+  isLight = false,
   onRunSnippet,
   onSaveSnippet,
   onDeleteSnippet,
   hasActiveSession,
 }) => {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState('');
@@ -68,17 +72,19 @@ export const SnippetsView: React.FC<SnippetsViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#181818] p-6 overflow-y-auto select-none">
+    <div className={`flex-1 flex flex-col h-full p-6 overflow-y-auto select-none ${
+      isLight ? 'bg-[#f5f5f5] text-slate-800' : 'bg-[#181818] text-slate-100'
+    }`}>
       <div className="max-w-4xl mx-auto w-full space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-white flex items-center space-x-2">
-              <BookmarkCheck className="w-6 h-6 text-amber-400" />
-              <span>Command Snippets & Scripts</span>
+            <h2 className="text-xl font-bold flex items-center space-x-2">
+              <BookmarkCheck className="w-6 h-6 text-amber-500" />
+              <span>{t('snippets.title')}</span>
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Store frequently used Linux shell commands and run them in your active terminal with one click.
+              {t('snippets.subtitle')}
             </p>
           </div>
 
@@ -87,7 +93,7 @@ export const SnippetsView: React.FC<SnippetsViewProps> = ({
             className="flex items-center space-x-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-lg transition-all"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Snippet</span>
+            <span>{t('snippets.addSnippet')}</span>
           </button>
         </div>
 
@@ -96,10 +102,12 @@ export const SnippetsView: React.FC<SnippetsViewProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
-            placeholder="Search snippets by title, command or category..."
+            placeholder={t('snippets.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#202020] border border-[#333] rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500"
+            className={`w-full border rounded-lg pl-9 pr-3 py-2 text-xs focus:outline-none focus:border-sky-500 ${
+              isLight ? 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400' : 'bg-[#202020] border-[#333] text-white placeholder:text-slate-500'
+            }`}
           />
         </div>
 
@@ -108,12 +116,18 @@ export const SnippetsView: React.FC<SnippetsViewProps> = ({
           {filtered.map((snippet) => (
             <div
               key={snippet.id}
-              className="bg-[#202020] border border-[#303030] rounded-xl p-4 flex flex-col justify-between shadow-sm"
+              className={`border rounded-xl p-4 flex flex-col justify-between shadow-sm transition-all ${
+                isLight ? 'bg-white border-slate-200 hover:border-sky-400' : 'bg-[#202020] border-[#303030]'
+              }`}
             >
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <h4 className="text-sm font-semibold text-white">{snippet.name}</h4>
-                  <span className="text-[10px] bg-[#181818] text-amber-300 font-medium px-2 py-0.5 rounded border border-[#333]">
+                  <h4 className={`text-sm font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                    {snippet.name}
+                  </h4>
+                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded border ${
+                    isLight ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-[#181818] text-amber-300 border-[#333]'
+                  }`}>
                     {snippet.category || 'General'}
                   </span>
                 </div>
@@ -122,12 +136,16 @@ export const SnippetsView: React.FC<SnippetsViewProps> = ({
                   <p className="text-xs text-slate-400 mb-2">{snippet.description}</p>
                 )}
 
-                <div className="bg-[#181818] border border-[#2d2d2d] rounded-md p-2 text-xs font-mono text-emerald-400 mb-3 break-all select-text">
+                <div className={`border rounded-md p-2 text-xs font-mono mb-3 break-all select-text ${
+                  isLight ? 'bg-slate-50 border-slate-200 text-emerald-700' : 'bg-[#181818] border-[#2d2d2d] text-emerald-400'
+                }`}>
                   $ {snippet.command}
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-[#2a2a2a]">
+              <div className={`flex items-center justify-between pt-2 border-t ${
+                isLight ? 'border-slate-100' : 'border-[#2a2a2a]'
+              }`}>
                 <button
                   onClick={() => onRunSnippet(snippet.command)}
                   disabled={!hasActiveSession}
@@ -135,21 +153,23 @@ export const SnippetsView: React.FC<SnippetsViewProps> = ({
                   title={hasActiveSession ? 'Execute in active terminal' : 'Connect to a server first'}
                 >
                   <Terminal className="w-3.5 h-3.5" />
-                  <span>Run in Terminal</span>
+                  <span>{t('snippets.runInTerminal')}</span>
                 </button>
 
                 <div className="flex items-center space-x-1">
                   <button
                     onClick={() => handleOpenEdit(snippet)}
-                    className="p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                    className={`p-1.5 rounded transition-colors ${
+                      isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-900' : 'hover:bg-white/10 text-slate-400 hover:text-white'
+                    }`}
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => onDeleteSnippet(snippet.id)}
-                    className="p-1.5 rounded hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors"
+                    className="p-1.5 rounded hover:bg-red-500/20 text-slate-400 hover:text-red-500 transition-colors"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -160,14 +180,18 @@ export const SnippetsView: React.FC<SnippetsViewProps> = ({
         {/* Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#202020] border border-[#383838] w-full max-w-md rounded-xl shadow-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between border-b border-[#303030] pb-3">
-                <h3 className="text-sm font-semibold text-white">
-                  {editId ? 'Edit Snippet' : 'New Command Snippet'}
+            <div className={`border w-full max-w-md rounded-xl shadow-2xl p-6 space-y-4 ${
+              isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-[#202020] border-[#383838] text-white'
+            }`}>
+              <div className={`flex items-center justify-between border-b pb-3 ${
+                isLight ? 'border-slate-200' : 'border-[#303030]'
+              }`}>
+                <h3 className="text-sm font-semibold">
+                  {editId ? t('snippets.save') : t('snippets.addSnippet')}
                 </h3>
                 <button
                   onClick={() => setShowModal(false)}
-                  className="text-slate-400 hover:text-white"
+                  className="text-slate-400 hover:text-slate-200"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -175,64 +199,74 @@ export const SnippetsView: React.FC<SnippetsViewProps> = ({
 
               <form onSubmit={handleSubmit} className="space-y-3">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Snippet Name</label>
+                  <label className="block text-xs text-slate-400 mb-1">{t('snippets.name')}</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Restart Nginx"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-[#272727] border border-[#3d3d3d] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500"
+                    className={`w-full border rounded px-3 py-1.5 text-xs focus:outline-none focus:border-sky-500 ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                    }`}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Category</label>
+                  <label className="block text-xs text-slate-400 mb-1">{t('snippets.category')}</label>
                   <input
                     type="text"
                     placeholder="General, Docker, System, Database..."
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full bg-[#272727] border border-[#3d3d3d] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500"
+                    className={`w-full border rounded px-3 py-1.5 text-xs focus:outline-none focus:border-sky-500 ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                    }`}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Command</label>
+                  <label className="block text-xs text-slate-400 mb-1">{t('snippets.command')}</label>
                   <textarea
                     rows={3}
                     required
                     placeholder="systemctl restart nginx"
                     value={command}
                     onChange={(e) => setCommand(e.target.value)}
-                    className="w-full bg-[#272727] border border-[#3d3d3d] rounded px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-sky-500"
+                    className={`w-full border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                    }`}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Description (optional)</label>
+                  <label className="block text-xs text-slate-400 mb-1">{t('snippets.description')}</label>
                   <input
                     type="text"
                     placeholder="Safely reloads configuration and restarts workers"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="w-full bg-[#272727] border border-[#3d3d3d] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500"
+                    className={`w-full border rounded px-3 py-1.5 text-xs focus:outline-none focus:border-sky-500 ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                    }`}
                   />
                 </div>
 
-                <div className="flex items-center justify-end space-x-2 pt-3 border-t border-[#303030]">
+                <div className={`flex items-center justify-end space-x-2 pt-3 border-t ${
+                  isLight ? 'border-slate-200' : 'border-[#303030]'
+                }`}>
                   <button
                     type="button"
                     onClick={() => setShowModal(false)}
-                    className="px-3 py-1.5 rounded text-xs text-slate-300 hover:bg-white/10"
+                    className="px-3 py-1.5 rounded text-xs text-slate-400 hover:text-slate-600"
                   >
-                    Cancel
+                    {t('modal.cancel')}
                   </button>
                   <button
                     type="submit"
                     className="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow"
                   >
-                    Save Snippet
+                    {t('snippets.save')}
                   </button>
                 </div>
               </form>
@@ -243,3 +277,4 @@ export const SnippetsView: React.FC<SnippetsViewProps> = ({
     </div>
   );
 };
+

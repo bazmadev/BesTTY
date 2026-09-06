@@ -56,6 +56,9 @@ declare global {
         close: () => Promise<void>;
         isMaximized: () => Promise<boolean>;
       };
+      dialog: {
+        openKeyFile: () => Promise<string | null>;
+      };
     };
   }
 }

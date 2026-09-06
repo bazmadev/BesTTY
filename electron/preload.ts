@@ -93,4 +93,8 @@ contextBridge.exposeInMainWorld('api', {
     close: () => ipcRenderer.invoke('window:close'),
     isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
   },
+
+  dialog: {
+    openKeyFile: () => ipcRenderer.invoke('dialog:openKeyFile'),
+  },
 });

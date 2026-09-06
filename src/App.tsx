@@ -11,7 +11,8 @@ import { TunnelsView } from './components/TunnelsView';
 import { SnippetsView } from './components/SnippetsView';
 import { SettingsView } from './components/SettingsView';
 import { VaultModal } from './components/VaultModal';
-import { PasswordPromptModal } from './components/PasswordPromptModal';
+import { PasswordPromptModal, AuthPromptResult } from './components/PasswordPromptModal';
+import { HelpModal } from './components/HelpModal';
 import { TabItem, TabType, HostProfile, Snippet, TunnelConfig, BesTTYSettings, VaultStatus } from './types';
 import { I18nProvider, useTranslation } from './i18n';
 
@@ -70,9 +71,10 @@ const MainApp: React.FC = () => {
 
   // Modals State
   const [isHostModalOpen, setIsHostModalOpen] = useState(false);
+  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [editingHost, setEditingHost] = useState<HostProfile | null>(null);
 
-  // Quick Password Prompt State
+  // Quick Password / Auth Prompt State
   const [pendingPromptHost, setPendingPromptHost] = useState<HostProfile | null>(null);
   const [isPasswordPromptOpen, setIsPasswordPromptOpen] = useState(false);
   const [pendingInitialTab, setPendingInitialTab] = useState<TabType>('terminal');
@@ -112,8 +114,13 @@ const MainApp: React.FC = () => {
 
   // Connect to Host
   const handleConnect = async (host: HostProfile, initialTabType: TabType = 'terminal') => {
-    // If password auth and password is empty, and no private key, prompt user for password
-    if (host.authType === 'password' && !host.password && !host.privateKeyPath && !host.privateKeyContent) {
+    // If auth credentials not provided, prompt user with full multi-method prompt
+    if (
+      host.authType !== 'agent' &&
+      !host.password &&
+      !host.privateKeyPath &&
+      !host.privateKeyContent
+    ) {
       setPendingPromptHost(host);
       setPendingInitialTab(initialTabType);
       setIsPasswordPromptOpen(true);
@@ -148,20 +155,23 @@ const MainApp: React.FC = () => {
     }
   };
 
-  const handlePasswordPromptSubmit = async (password: string, remember: boolean) => {
+  const handlePasswordPromptSubmit = async (result: AuthPromptResult, remember: boolean) => {
     if (!pendingPromptHost) return;
 
-    const hostWithPassword: HostProfile = {
+    const hostWithCredentials: HostProfile = {
       ...pendingPromptHost,
-      password,
+      authType: result.authType,
+      password: result.authType === 'password' ? result.password : undefined,
+      privateKeyPath: result.authType === 'privateKey' ? result.privateKeyPath : undefined,
+      passphrase: result.authType === 'privateKey' ? result.passphrase : undefined,
     };
 
     if (remember) {
-      await handleSaveHost(hostWithPassword);
+      await handleSaveHost(hostWithCredentials);
     }
 
     setIsPasswordPromptOpen(false);
-    await executeConnection(hostWithPassword, pendingInitialTab);
+    await executeConnection(hostWithCredentials, pendingInitialTab);
     setPendingPromptHost(null);
   };
 
@@ -339,6 +349,7 @@ const MainApp: React.FC = () => {
           setActiveTabId('hosts-view');
         }}
         onDuplicateTab={() => handleDuplicateSession()}
+        onOpenHelp={() => setIsHelpModalOpen(true)}
       />
 
       {/* Main App Workspace */}
@@ -412,6 +423,7 @@ const MainApp: React.FC = () => {
           {currentView === 'sftp' && activeTab && activeTab.sessionId && (
             <SftpView
               sessionId={activeTab.sessionId}
+              isLight={isLight}
               initialPath={activeSessions.get(activeTab.sessionId)?.defaultPath || '/'}
               onOpenFileInEditor={(filePath, fileName) =>
                 handleOpenFileInEditor(activeTab.sessionId!, filePath, fileName)
@@ -439,6 +451,7 @@ const MainApp: React.FC = () => {
           {currentView === 'monitor' && activeTab && activeTab.sessionId && (
             <MonitorView
               sessionId={activeTab.sessionId}
+              isLight={isLight}
               hostName={activeSessions.get(activeTab.sessionId)?.name}
             />
           )}
@@ -448,6 +461,7 @@ const MainApp: React.FC = () => {
             <TunnelsView
               tunnels={tunnels}
               hosts={hosts}
+              isLight={isLight}
               onSaveTunnel={async (tunnel) => {
                 await window.api.vault.saveTunnel(tunnel);
                 setTunnels(await window.api.vault.getTunnels());
@@ -463,6 +477,7 @@ const MainApp: React.FC = () => {
           {currentView === 'editor' && !activeTab?.filePath && (
             <SnippetsView
               snippets={snippets}
+              isLight={isLight}
               onRunSnippet={handleRunSnippet}
               onSaveSnippet={async (snippet) => {
                 await window.api.vault.saveSnippet(snippet);
@@ -497,6 +512,7 @@ const MainApp: React.FC = () => {
         isLight={isLight}
         onClose={() => setIsHostModalOpen(false)}
         onSave={handleSaveHost}
+        onOpenHelp={() => setIsHelpModalOpen(true)}
         hostToEdit={editingHost}
         availableHosts={hosts}
       />
@@ -511,12 +527,19 @@ const MainApp: React.FC = () => {
 
       <PasswordPromptModal
         isOpen={isPasswordPromptOpen}
+        isLight={isLight}
         host={pendingPromptHost}
         onClose={() => {
           setIsPasswordPromptOpen(false);
           setPendingPromptHost(null);
         }}
         onSubmit={handlePasswordPromptSubmit}
+      />
+
+      <HelpModal
+        isOpen={isHelpModalOpen}
+        isLight={isLight}
+        onClose={() => setIsHelpModalOpen(false)}
       />
     </div>
   );
