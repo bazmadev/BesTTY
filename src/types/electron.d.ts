@@ -1,4 +1,4 @@
-import { HostProfile, Snippet, TunnelConfig, BesTTYSettings, SFTPFile, ServerMetrics, RemoteProcess, VaultStatus } from './index';
+import { HostProfile, Snippet, TunnelConfig, BesTTYSettings, SFTPFile, ServerMetrics, RemoteProcess, VaultStatus, UpdateState } from './index';
 
 declare global {
   interface Window {
@@ -21,6 +21,7 @@ declare global {
       };
       ssh: {
         connect: (sessionId: string, host: HostProfile, cols: number, rows: number) => Promise<void>;
+        testConnection: (host: HostProfile) => Promise<{ success: boolean; error?: string; fingerprint?: string }>;
         write: (sessionId: string, data: string) => Promise<void>;
         resize: (sessionId: string, cols: number, rows: number) => Promise<void>;
         disconnect: (sessionId: string) => Promise<void>;
@@ -58,6 +59,13 @@ declare global {
       };
       dialog: {
         openKeyFile: () => Promise<string | null>;
+      };
+      updater: {
+        getStatus: () => Promise<UpdateState>;
+        check: () => Promise<UpdateState>;
+        download: () => Promise<void>;
+        install: () => Promise<void>;
+        onStatus: (callback: (state: UpdateState) => void) => () => void;
       };
     };
   }

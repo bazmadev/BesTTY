@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { HostProfile, AuthType } from '../types';
 import { useTranslation } from '../i18n';
 import { parseSSHConnectionString } from '../utils/sshParser';
-import { X, Key, Lock, Terminal, Shield, ChevronDown, ChevronUp, Eye, EyeOff, Sparkles, FolderOpen, HelpCircle } from 'lucide-react';
+import { X, Key, Lock, Terminal, Shield, ChevronDown, ChevronUp, Eye, EyeOff, Sparkles, FolderOpen, HelpCircle, CheckCircle2, AlertTriangle, Loader2, Activity } from 'lucide-react';
 
 interface HostModalProps {
   isOpen: boolean;
@@ -41,6 +41,15 @@ export const HostModal: React.FC<HostModalProps> = ({
   const [proxyJumpId, setProxyJumpId] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // Connection testing state
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    error?: string;
+    fingerprint?: string;
+  } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   useEffect(() => {
     if (hostToEdit) {
       setName(hostToEdit.name);
@@ -73,6 +82,9 @@ export const HostModal: React.FC<HostModalProps> = ({
       setProxyJumpId('');
       setSmartPaste('');
     }
+    setTestResult(null);
+    setSaveError(null);
+    setIsTesting(false);
   }, [hostToEdit, isOpen]);
 
   // Handle Smart Paste decomposition
@@ -95,31 +107,74 @@ export const HostModal: React.FC<HostModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
+  const buildCurrentProfile = (extraFingerprint?: string): HostProfile => ({
+    id: hostToEdit ? hostToEdit.id : crypto.randomUUID(),
+    name: name.trim() || `${username}@${host}`,
+    host: host.trim(),
+    port: Number(port) || 22,
+    username: username.trim() || 'root',
+    authType,
+    password: authType === 'password' ? password : undefined,
+    privateKeyContent: authType === 'privateKey' ? privateKeyContent : undefined,
+    privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
+    passphrase: authType === 'privateKey' && passphrase ? passphrase : undefined,
+    group: group.trim() || 'Default',
+    color,
+    defaultPath: defaultPath.trim() || undefined,
+    proxyJumpId: proxyJumpId || undefined,
+    fingerprint: extraFingerprint || hostToEdit?.fingerprint,
+    createdAt: hostToEdit ? hostToEdit.createdAt : Date.now(),
+    updatedAt: Date.now(),
+  });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const profile: HostProfile = {
-      id: hostToEdit ? hostToEdit.id : crypto.randomUUID(),
-      name: name.trim() || `${username}@${host}`,
-      host: host.trim(),
-      port: Number(port) || 22,
-      username: username.trim() || 'root',
-      authType,
-      password: authType === 'password' ? password : undefined,
-      privateKeyContent: authType === 'privateKey' ? privateKeyContent : undefined,
-      privateKeyPath: authType === 'privateKey' ? privateKeyPath : undefined,
-      passphrase: authType === 'privateKey' && passphrase ? passphrase : undefined,
-      group: group.trim() || 'Default',
-      color,
-      defaultPath: defaultPath.trim() || undefined,
-      proxyJumpId: proxyJumpId || undefined,
-      createdAt: hostToEdit ? hostToEdit.createdAt : Date.now(),
-      updatedAt: Date.now(),
-    };
+  const handleRunManualTest = async () => {
+    if (!host.trim() || !username.trim()) return;
+    setIsTesting(true);
+    setTestResult(null);
+    setSaveError(null);
+    try {
+      const profile = buildCurrentProfile();
+      const result = await window.api.ssh.testConnection(profile);
+      setTestResult(result);
+    } catch (e: any) {
+      setTestResult({ success: false, error: e.message || String(e) });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const handleForceSave = () => {
+    const profile = buildCurrentProfile(testResult?.fingerprint);
     onSave(profile);
     onClose();
   };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!host.trim() || !username.trim()) return;
+
+    setSaveError(null);
+    setIsTesting(true);
+    const profile = buildCurrentProfile();
+
+    try {
+      const result = await window.api.ssh.testConnection(profile);
+      setIsTesting(false);
+
+      if (result.success) {
+        const verifiedProfile = buildCurrentProfile(result.fingerprint);
+        onSave(verifiedProfile);
+        onClose();
+      } else {
+        setSaveError(result.error || t('modal.testFailedDesc'));
+      }
+    } catch (e: any) {
+      setIsTesting(false);
+      setSaveError(e.message || t('modal.testFailedDesc'));
+    }
+  };
+
+  if (!isOpen) return null;
 
   const colors = ['#0078d4', '#107c41', '#d83b01', '#881798', '#e3008c', '#00b7c3', '#ffaa44'];
 
@@ -466,21 +521,119 @@ export const HostModal: React.FC<HostModalProps> = ({
             )}
           </div>
 
+          {/* Connection Test Result Feedback */}
+          {testResult && !saveError && (
+            <div
+              className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 transition-all ${
+                testResult.success
+                  ? isLight
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                    : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                  : isLight
+                  ? 'bg-red-50 border-red-300 text-red-800'
+                  : 'bg-red-950/40 border-red-500/30 text-red-300'
+              }`}
+            >
+              {testResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <div className="font-semibold">
+                  {testResult.success
+                    ? t('modal.testSuccess')
+                    : (testResult.error || t('modal.testFailed'))}
+                </div>
+                {testResult.fingerprint && (
+                  <div className="text-[11px] font-mono opacity-80 mt-0.5 break-all">
+                    {t('modal.fingerprint')} {testResult.fingerprint}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Save Connection Failed - Action Banner */}
+          {saveError && (
+            <div
+              className={`p-4 rounded-xl border text-xs space-y-3 shadow-lg ${
+                isLight
+                  ? 'bg-red-50/90 border-red-300 text-red-900'
+                  : 'bg-red-950/40 border-red-500/40 text-red-200'
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-semibold text-sm text-red-500 mb-1">
+                    {t('modal.testFailed')}
+                  </div>
+                  <div className="font-mono text-[11px] leading-relaxed break-all opacity-90">
+                    {saveError}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-red-500/20">
+                <button
+                  type="button"
+                  onClick={() => setSaveError(null)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    isLight
+                      ? 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                      : 'bg-white/10 hover:bg-white/20 text-white'
+                  }`}
+                >
+                  {t('modal.fixCredentials')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleForceSave}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-600 hover:bg-amber-500 text-white shadow transition-colors"
+                >
+                  {t('modal.ignoreAndSave')}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
-          <div className="pt-4 border-t border-slate-500/20 flex items-center justify-end space-x-3">
+          <div className="pt-4 border-t border-slate-500/20 flex items-center justify-between">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-md text-xs font-medium text-slate-400 hover:bg-slate-500/10 transition-colors"
+              disabled={isTesting || !host.trim() || !username.trim()}
+              onClick={handleRunManualTest}
+              className={`px-3 py-2 rounded-md text-xs font-medium flex items-center gap-1.5 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                isLight
+                  ? 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                  : 'border-white/10 text-slate-300 hover:bg-white/5'
+              }`}
             >
-              {t('modal.cancel')}
+              {isTesting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+              ) : (
+                <Activity className="w-3.5 h-3.5 text-sky-400" />
+              )}
+              <span>{isTesting ? t('modal.testing') : t('modal.testConnection')}</span>
             </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-md text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white shadow-lg transition-colors"
-            >
-              {hostToEdit ? t('modal.save') : t('modal.add')}
-            </button>
+
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-md text-xs font-medium text-slate-400 hover:bg-slate-500/10 transition-colors"
+              >
+                {t('modal.cancel')}
+              </button>
+              <button
+                type="submit"
+                disabled={isTesting}
+                className="px-4 py-2 rounded-md text-xs font-medium bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white shadow-lg transition-colors flex items-center gap-1.5"
+              >
+                {isTesting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{hostToEdit ? t('modal.save') : t('modal.add')}</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>

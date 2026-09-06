@@ -10,11 +10,13 @@ import { MonitorView } from './components/MonitorView';
 import { TunnelsView } from './components/TunnelsView';
 import { SnippetsView } from './components/SnippetsView';
 import { SettingsView } from './components/SettingsView';
+import { EmptyStateView } from './components/EmptyStateView';
 import { VaultModal } from './components/VaultModal';
 import { PasswordPromptModal, AuthPromptResult } from './components/PasswordPromptModal';
 import { HelpModal } from './components/HelpModal';
-import { TabItem, TabType, HostProfile, Snippet, TunnelConfig, BesTTYSettings, VaultStatus } from './types';
+import { TabItem, TabType, HostProfile, Snippet, TunnelConfig, BesTTYSettings, VaultStatus, UpdateState } from './types';
 import { I18nProvider, useTranslation } from './i18n';
+import { parseSSHConnectionString } from './utils/sshParser';
 
 const MainApp: React.FC = () => {
   const { locale } = useTranslation();
@@ -112,6 +114,19 @@ const MainApp: React.FC = () => {
     loadVaultData();
   }, []);
 
+  // OTA Updater State
+  const [updateState, setUpdateState] = useState<UpdateState>({
+    status: 'idle',
+    currentVersion: '1.0.0',
+  });
+
+  useEffect(() => {
+    if (!window.api?.updater) return;
+    window.api.updater.getStatus().then(setUpdateState);
+    const unsubscribe = window.api.updater.onStatus((st) => setUpdateState(st));
+    return () => unsubscribe();
+  }, []);
+
   // Connect to Host
   const handleConnect = async (host: HostProfile, initialTabType: TabType = 'terminal') => {
     // If auth credentials not provided, prompt user with full multi-method prompt
@@ -139,20 +154,52 @@ const MainApp: React.FC = () => {
 
       setActiveSessions((prev) => new Map(prev).set(sessionId, host));
 
-      const newTab: TabItem = {
-        id: `tab-${sessionId}-${initialTabType}`,
-        type: initialTabType,
-        title: `${host.name || host.host} (${initialTabType})`,
+      const terminalTab: TabItem = {
+        id: `tab-${sessionId}-terminal`,
+        type: 'terminal',
+        title: `${host.name || host.host} (Terminal)`,
         hostId: host.id,
         sessionId,
       };
 
-      setTabs((prev) => [...prev, newTab]);
-      setActiveTabId(newTab.id);
-      setCurrentView(initialTabType);
+      if (initialTabType === 'terminal') {
+        setTabs((prev) => [...prev, terminalTab]);
+        setActiveTabId(terminalTab.id);
+        setCurrentView('terminal');
+      } else {
+        const specializedTab: TabItem = {
+          id: `tab-${sessionId}-${initialTabType}`,
+          type: initialTabType,
+          title: `${host.name || host.host} (${initialTabType.toUpperCase()})`,
+          hostId: host.id,
+          sessionId,
+        };
+        setTabs((prev) => [...prev, terminalTab, specializedTab]);
+        setActiveTabId(specializedTab.id);
+        setCurrentView(initialTabType);
+      }
     } catch (err: any) {
       alert(`SSH Connection Failed to ${host.host}: ${err.message}`);
     }
+  };
+
+  const handleQuickConnect = (rawCommand: string, initialTab: TabType = 'terminal') => {
+    const parsed = parseSSHConnectionString(rawCommand);
+    if (!parsed.host) return;
+
+    const tempHost: HostProfile = {
+      id: crypto.randomUUID(),
+      name: `Quick: ${parsed.username}@${parsed.host}`,
+      host: parsed.host,
+      port: parsed.port,
+      username: parsed.username,
+      authType: parsed.privateKeyPath ? 'privateKey' : 'password',
+      privateKeyPath: parsed.privateKeyPath,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    handleConnect(tempHost, initialTab);
   };
 
   const handlePasswordPromptSubmit = async (result: AuthPromptResult, remember: boolean) => {
@@ -338,6 +385,7 @@ const MainApp: React.FC = () => {
         activeTabId={activeTabId}
         isLight={isLight}
         canDuplicate={canDuplicate}
+        updateAvailable={updateState.status === 'available' || updateState.status === 'downloaded'}
         onSelectTab={(id) => {
           setActiveTabId(id);
           const t = tabs.find((item) => item.id === id);
@@ -350,6 +398,7 @@ const MainApp: React.FC = () => {
         }}
         onDuplicateTab={() => handleDuplicateSession()}
         onOpenHelp={() => setIsHelpModalOpen(true)}
+        onOpenSettings={() => setCurrentView('settings')}
       />
 
       {/* Main App Workspace */}
@@ -392,44 +441,79 @@ const MainApp: React.FC = () => {
             />
           )}
 
-          {/* Persistent Terminal Views Container (Keeps DOM alive across tab switches!) */}
-          {tabs
-            .filter((t) => t.type === 'terminal' && t.sessionId)
-            .map((tab) => {
-              const isTabActive = currentView === 'terminal' && activeTabId === tab.id;
-              return (
-                <div
-                  key={tab.sessionId}
-                  className="w-full h-full"
-                  style={{ display: isTabActive ? 'flex' : 'none' }}
-                >
-                  <TerminalView
-                    sessionId={tab.sessionId!}
-                    host={activeSessions.get(tab.sessionId!)}
-                    isLight={isLight}
-                    isActive={isTabActive}
-                    onOpenSftp={() => handleOpenSftp(tab.sessionId!)}
-                    onOpenMonitor={() => handleOpenMonitor(tab.sessionId!)}
-                    onOpenFileInEditor={(filePath, fileName) =>
-                      handleOpenFileInEditor(tab.sessionId!, filePath, fileName)
-                    }
-                    onDuplicateSession={() => handleDuplicateSession(tab.sessionId)}
-                  />
-                </div>
-              );
-            })}
-
-          {/* Active SFTP Tab View */}
-          {currentView === 'sftp' && activeTab && activeTab.sessionId && (
-            <SftpView
-              sessionId={activeTab.sessionId}
-              isLight={isLight}
-              initialPath={activeSessions.get(activeTab.sessionId)?.defaultPath || '/'}
-              onOpenFileInEditor={(filePath, fileName) =>
-                handleOpenFileInEditor(activeTab.sessionId!, filePath, fileName)
-              }
-            />
+          {/* Terminal Views Container or Empty State */}
+          {currentView === 'terminal' && (
+            tabs.some((t) => t.type === 'terminal' && t.sessionId) ? (
+              tabs
+                .filter((t) => t.type === 'terminal' && t.sessionId)
+                .map((tab) => {
+                  const isTabActive = currentView === 'terminal' && activeTabId === tab.id;
+                  return (
+                    <div
+                      key={tab.sessionId}
+                      className="w-full h-full"
+                      style={{ display: isTabActive ? 'flex' : 'none' }}
+                    >
+                      <TerminalView
+                        sessionId={tab.sessionId!}
+                        host={activeSessions.get(tab.sessionId!)}
+                        isLight={isLight}
+                        isActive={isTabActive}
+                        onOpenSftp={() => handleOpenSftp(tab.sessionId!)}
+                        onOpenMonitor={() => handleOpenMonitor(tab.sessionId!)}
+                        onOpenFileInEditor={(filePath, fileName) =>
+                          handleOpenFileInEditor(tab.sessionId!, filePath, fileName)
+                        }
+                        onDuplicateSession={() => handleDuplicateSession(tab.sessionId)}
+                      />
+                    </div>
+                  );
+                })
+            ) : (
+              <EmptyStateView
+                viewType="terminal"
+                hosts={hosts}
+                isLight={isLight}
+                onConnectHost={(h) => handleConnect(h, 'terminal')}
+                onQuickConnect={(cmd) => handleQuickConnect(cmd, 'terminal')}
+                onNewHost={() => {
+                  setEditingHost(null);
+                  setIsHostModalOpen(true);
+                }}
+              />
+            )
           )}
+
+          {/* Active SFTP Tab View or Empty State */}
+          {currentView === 'sftp' && (() => {
+            const sftpTab = tabs.find((t) => t.id === activeTabId && t.type === 'sftp' && t.sessionId) ||
+                            tabs.find((t) => t.type === 'sftp' && t.sessionId);
+            if (sftpTab && sftpTab.sessionId) {
+              return (
+                <SftpView
+                  sessionId={sftpTab.sessionId}
+                  isLight={isLight}
+                  initialPath={activeSessions.get(sftpTab.sessionId)?.defaultPath || '/'}
+                  onOpenFileInEditor={(filePath, fileName) =>
+                    handleOpenFileInEditor(sftpTab.sessionId!, filePath, fileName)
+                  }
+                />
+              );
+            }
+            return (
+              <EmptyStateView
+                viewType="sftp"
+                hosts={hosts}
+                isLight={isLight}
+                onConnectHost={(h) => handleConnect(h, 'sftp')}
+                onQuickConnect={(cmd) => handleQuickConnect(cmd, 'sftp')}
+                onNewHost={() => {
+                  setEditingHost(null);
+                  setIsHostModalOpen(true);
+                }}
+              />
+            );
+          })()}
 
           {/* Active Monaco Editor Tab View */}
           {currentView === 'editor' && activeTab && activeTab.sessionId && activeTab.filePath && (
@@ -447,14 +531,33 @@ const MainApp: React.FC = () => {
             />
           )}
 
-          {/* Active Monitor Tab View */}
-          {currentView === 'monitor' && activeTab && activeTab.sessionId && (
-            <MonitorView
-              sessionId={activeTab.sessionId}
-              isLight={isLight}
-              hostName={activeSessions.get(activeTab.sessionId)?.name}
-            />
-          )}
+          {/* Active Monitor Tab View or Empty State */}
+          {currentView === 'monitor' && (() => {
+            const monTab = tabs.find((t) => t.id === activeTabId && t.type === 'monitor' && t.sessionId) ||
+                           tabs.find((t) => t.type === 'monitor' && t.sessionId);
+            if (monTab && monTab.sessionId) {
+              return (
+                <MonitorView
+                  sessionId={monTab.sessionId}
+                  isLight={isLight}
+                  hostName={activeSessions.get(monTab.sessionId)?.name}
+                />
+              );
+            }
+            return (
+              <EmptyStateView
+                viewType="monitor"
+                hosts={hosts}
+                isLight={isLight}
+                onConnectHost={(h) => handleConnect(h, 'monitor')}
+                onQuickConnect={(cmd) => handleQuickConnect(cmd, 'monitor')}
+                onNewHost={() => {
+                  setEditingHost(null);
+                  setIsHostModalOpen(true);
+                }}
+              />
+            );
+          })()}
 
           {/* Tunnels View */}
           {currentView === 'tunnels' && (

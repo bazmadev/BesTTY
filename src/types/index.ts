@@ -18,6 +18,7 @@ export interface HostProfile {
   defaultPath?: string;
   keepAliveInterval?: number;
   notes?: string;
+  fingerprint?: string; // SSH host key fingerprint (TOFU)
   createdAt: number;
   updatedAt: number;
 }
@@ -117,3 +118,22 @@ export interface VaultStatus {
   isConfigured: boolean;
   isUnlocked: boolean;
 }
+
+export interface UpdateProgress {
+  percent: number;
+  bytesPerSecond: number;
+  transferred: number;
+  total: number;
+}
+
+export type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+
+export interface UpdateState {
+  status: UpdateStatus;
+  currentVersion: string;
+  availableVersion?: string;
+  releaseNotes?: string;
+  progress?: UpdateProgress;
+  error?: string;
+}
+

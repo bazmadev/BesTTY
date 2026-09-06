@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('ssh:resize', sessionId, cols, rows),
     disconnect: (sessionId: string) =>
       ipcRenderer.invoke('ssh:disconnect', sessionId),
+    testConnection: (host: HostProfile) =>
+      ipcRenderer.invoke('ssh:testConnection', host),
     onData: (callback: (payload: { sessionId: string; data: string }) => void) => {
       const handler = (_: any, payload: any) => callback(payload);
       ipcRenderer.on('ssh:data', handler);
@@ -96,5 +98,17 @@ contextBridge.exposeInMainWorld('api', {
 
   dialog: {
     openKeyFile: () => ipcRenderer.invoke('dialog:openKeyFile'),
+  },
+
+  updater: {
+    getStatus: () => ipcRenderer.invoke('updater:getStatus'),
+    check: () => ipcRenderer.invoke('updater:check'),
+    download: () => ipcRenderer.invoke('updater:download'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    onStatus: (callback: (state: any) => void) => {
+      const handler = (_: any, state: any) => callback(state);
+      ipcRenderer.on('updater:status', handler);
+      return () => ipcRenderer.removeListener('updater:status', handler);
+    },
   },
 });

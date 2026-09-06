@@ -1,18 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { TabItem } from '../types';
 import { useTranslation } from '../i18n';
-import { Terminal, FolderTree, Code, Activity, Network, Settings, X, Plus, Minus, Square, Copy, Zap, HelpCircle } from 'lucide-react';
+import { Terminal, FolderTree, Code, Activity, Network, Settings, X, Plus, Minus, Square, Copy, Zap, HelpCircle, Sparkles } from 'lucide-react';
 
 interface TitleBarProps {
   tabs: TabItem[];
   activeTabId: string;
   isLight?: boolean;
   canDuplicate?: boolean;
+  updateAvailable?: boolean;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
   onDuplicateTab?: () => void;
   onOpenHelp?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -20,11 +22,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   activeTabId,
   isLight = false,
   canDuplicate = false,
+  updateAvailable = false,
   onSelectTab,
   onCloseTab,
   onNewTab,
   onDuplicateTab,
   onOpenHelp,
+  onOpenSettings,
 }) => {
   const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -139,6 +143,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
       {/* Windows 11 Titlebar Controls */}
       <div className="flex items-center space-x-0 titlebar-no-drag">
+        {updateAvailable && onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            className="px-2.5 h-6 my-auto mr-2 flex items-center gap-1.5 rounded-full text-[11px] font-medium bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-md animate-pulse hover:animate-none transition-all cursor-pointer"
+            title={t('updater.updateBadge')}
+          >
+            <Sparkles className="w-3 h-3 text-amber-200" />
+            <span className="hidden sm:inline">{t('updater.updateBadge')}</span>
+          </button>
+        )}
         {onOpenHelp && (
           <button
             onClick={onOpenHelp}

@@ -12,6 +12,108 @@ export interface SSHSessionInfo {
   client: Client;
   shellStream?: ClientChannel;
   currentDirectory: string;
+  fingerprint?: string;
+}
+
+export const SSH_ALGORITHMS = {
+  kex: [
+    'curve25519-sha256',
+    'curve25519-sha256@libssh.org',
+    'ecdh-sha2-nistp256',
+    'ecdh-sha2-nistp384',
+    'ecdh-sha2-nistp521',
+    'diffie-hellman-group-exchange-sha256',
+    'diffie-hellman-group14-sha256',
+    'diffie-hellman-group15-sha512',
+    'diffie-hellman-group16-sha512',
+    'diffie-hellman-group17-sha512',
+    'diffie-hellman-group18-sha512',
+    'diffie-hellman-group-exchange-sha1',
+    'diffie-hellman-group14-sha1',
+    'diffie-hellman-group1-sha1',
+  ],
+  cipher: [
+    'chacha20-poly1305@openssh.com',
+    'aes128-gcm',
+    'aes128-gcm@openssh.com',
+    'aes256-gcm',
+    'aes256-gcm@openssh.com',
+    'aes128-ctr',
+    'aes192-ctr',
+    'aes256-ctr',
+    'aes256-cbc',
+    'aes192-cbc',
+    'aes128-cbc',
+    '3des-cbc',
+  ],
+  serverHostKey: [
+    'ssh-ed25519',
+    'ecdsa-sha2-nistp256',
+    'ecdsa-sha2-nistp384',
+    'ecdsa-sha2-nistp521',
+    'rsa-sha2-512',
+    'rsa-sha2-256',
+    'ssh-rsa',
+    'ssh-dss',
+  ],
+  hmac: [
+    'hmac-sha2-256-etm@openssh.com',
+    'hmac-sha2-512-etm@openssh.com',
+    'hmac-sha1-etm@openssh.com',
+    'hmac-sha2-256',
+    'hmac-sha2-512',
+    'hmac-sha1',
+    'hmac-md5',
+  ],
+};
+
+function applyAuthConfig(config: ConnectConfig, host: HostProfile): void {
+  if (host.authType === 'password') {
+    if (host.password) {
+      config.password = host.password;
+    } else {
+      // Smart fallback: try local ssh-agent or default user keys (~/.ssh/id_ed25519, ~/.ssh/id_rsa)
+      const agentPipe = process.platform === 'win32'
+        ? '\\\\.\\pipe\\openssh-ssh-agent'
+        : process.env.SSH_AUTH_SOCK;
+      config.agent = agentPipe;
+
+      const homeDir = os.homedir();
+      const defaultEd25519 = path.join(homeDir, '.ssh', 'id_ed25519');
+      const defaultRsa = path.join(homeDir, '.ssh', 'id_rsa');
+      if (fs.existsSync(defaultEd25519)) {
+        try {
+          config.privateKey = fs.readFileSync(defaultEd25519);
+        } catch {
+          // ignore
+        }
+      } else if (fs.existsSync(defaultRsa)) {
+        try {
+          config.privateKey = fs.readFileSync(defaultRsa);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  } else if (host.authType === 'privateKey') {
+    if (host.privateKeyContent) {
+      config.privateKey = host.privateKeyContent;
+    } else if (host.privateKeyPath && fs.existsSync(host.privateKeyPath)) {
+      try {
+        config.privateKey = fs.readFileSync(host.privateKeyPath);
+      } catch {
+        // ignore
+      }
+    }
+    if (host.passphrase) {
+      config.passphrase = host.passphrase;
+    }
+  } else if (host.authType === 'agent') {
+    const agentPipe = process.platform === 'win32'
+      ? '\\\\.\\pipe\\openssh-ssh-agent'
+      : process.env.SSH_AUTH_SOCK;
+    config.agent = agentPipe;
+  }
 }
 
 export class SSHClientManager extends EventEmitter {
@@ -29,51 +131,34 @@ export class SSHClientManager extends EventEmitter {
     return new Promise((resolve, reject) => {
       let isResolved = false;
       const client = new Client();
+      let detectedFingerprint = '';
 
       const config: ConnectConfig = {
         host: host.host,
         port: host.port || 22,
         username: host.username,
         keepaliveInterval: (host.keepAliveInterval || 30) * 1000,
-        readyTimeout: 20000,
+        readyTimeout: 25000,
+        tryKeyboard: true, // Enables PAM / keyboard-interactive authentication fallback
+        hostHash: 'sha256',
+        hostVerifier: (fingerprint: string) => {
+          detectedFingerprint = `SHA256:${fingerprint}`;
+          return true; // TOFU (Trust On First Use)
+        },
+        algorithms: SSH_ALGORITHMS as any,
       };
 
       // Configure Authentication
-      if (host.authType === 'password') {
-        if (host.password) {
-          config.password = host.password;
-        } else {
-          // If password was empty, attempt agent or default user keys as smart fallback
-          const agentPipe = process.platform === 'win32'
-            ? '\\\\.\\pipe\\openssh-ssh-agent'
-            : process.env.SSH_AUTH_SOCK;
-          config.agent = agentPipe;
+      applyAuthConfig(config, host);
 
-          // Also check default user key files (~/.ssh/id_ed25519, ~/.ssh/id_rsa)
-          const homeDir = os.homedir();
-          const defaultEd25519 = path.join(homeDir, '.ssh', 'id_ed25519');
-          const defaultRsa = path.join(homeDir, '.ssh', 'id_rsa');
-          if (fs.existsSync(defaultEd25519)) {
-            config.privateKey = fs.readFileSync(defaultEd25519);
-          } else if (fs.existsSync(defaultRsa)) {
-            config.privateKey = fs.readFileSync(defaultRsa);
-          }
+      // Handle PAM / keyboard-interactive challenges (resolves 'All configured authentication methods failed')
+      client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, finish) => {
+        if (prompts && prompts.length > 0 && host.password) {
+          finish(prompts.map(() => host.password!));
+        } else {
+          finish([]);
         }
-      } else if (host.authType === 'privateKey') {
-        if (host.privateKeyContent) {
-          config.privateKey = host.privateKeyContent;
-        } else if (host.privateKeyPath && fs.existsSync(host.privateKeyPath)) {
-          config.privateKey = fs.readFileSync(host.privateKeyPath);
-        }
-        if (host.passphrase) {
-          config.passphrase = host.passphrase;
-        }
-      } else if (host.authType === 'agent') {
-        const agentPipe = process.platform === 'win32'
-          ? '\\\\.\\pipe\\openssh-ssh-agent'
-          : process.env.SSH_AUTH_SOCK;
-        config.agent = agentPipe;
-      }
+      });
 
       client.on('ready', () => {
         // Open interactive PTY shell
@@ -100,6 +185,7 @@ export class SSHClientManager extends EventEmitter {
               client,
               shellStream: stream,
               currentDirectory: host.defaultPath || '~',
+              fingerprint: detectedFingerprint || host.fingerprint,
             };
 
             this.sessions.set(sessionId, sessionInfo);
@@ -124,7 +210,7 @@ export class SSHClientManager extends EventEmitter {
               this.disconnect(sessionId);
             });
 
-            this.emit('connected', { sessionId, hostId: host.id });
+            this.emit('connected', { sessionId, hostId: host.id, fingerprint: detectedFingerprint });
             if (!isResolved) {
               isResolved = true;
               resolve();
@@ -157,6 +243,76 @@ export class SSHClientManager extends EventEmitter {
           isResolved = true;
           reject(e);
         }
+      }
+    });
+  }
+
+  /**
+   * Fast connection test handshake without spawning a shell.
+   * Resolves connection status, error details, and host fingerprint.
+   */
+  public async testConnection(host: HostProfile): Promise<{ success: boolean; error?: string; fingerprint?: string }> {
+    return new Promise((resolve) => {
+      let isFinished = false;
+      const client = new Client();
+      let detectedFingerprint = '';
+
+      const cleanupAndResolve = (success: boolean, error?: string) => {
+        if (isFinished) return;
+        isFinished = true;
+        clearTimeout(timer);
+        try {
+          client.end();
+        } catch {
+          // ignore
+        }
+        resolve({
+          success,
+          error,
+          fingerprint: detectedFingerprint,
+        });
+      };
+
+      const timer = setTimeout(() => {
+        cleanupAndResolve(false, 'Connection timeout (10s): Remote host did not respond');
+      }, 10000);
+
+      const config: ConnectConfig = {
+        host: host.host,
+        port: host.port || 22,
+        username: host.username,
+        readyTimeout: 10000,
+        tryKeyboard: true,
+        hostHash: 'sha256',
+        hostVerifier: (fingerprint: string) => {
+          detectedFingerprint = `SHA256:${fingerprint}`;
+          return true; // TOFU
+        },
+        algorithms: SSH_ALGORITHMS as any,
+      };
+
+      applyAuthConfig(config, host);
+
+      client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, finish) => {
+        if (prompts && prompts.length > 0 && host.password) {
+          finish(prompts.map(() => host.password!));
+        } else {
+          finish([]);
+        }
+      });
+
+      client.on('ready', () => {
+        cleanupAndResolve(true);
+      });
+
+      client.on('error', (err) => {
+        cleanupAndResolve(false, err.message || String(err));
+      });
+
+      try {
+        client.connect(config);
+      } catch (err: any) {
+        cleanupAndResolve(false, err.message || String(err));
       }
     });
   }
@@ -207,3 +363,4 @@ export class SSHClientManager extends EventEmitter {
     }
   }
 }
+

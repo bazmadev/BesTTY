@@ -5,6 +5,7 @@ import { SSHClientManager } from './ssh/SSHClientManager';
 import { SFTPManager } from './ssh/SFTPManager';
 import { MonitorService } from './ssh/MonitorService';
 import { TunnelManager } from './ssh/TunnelManager';
+import { AutoUpdaterManager } from './updater/AutoUpdaterManager';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -13,6 +14,7 @@ const sshManager = new SSHClientManager();
 const sftpManager = new SFTPManager(sshManager);
 const monitorService = new MonitorService(sshManager);
 const tunnelManager = new TunnelManager(sshManager);
+const autoUpdaterManager = new AutoUpdaterManager();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -64,7 +66,10 @@ function createWindow() {
     mainWindow?.webContents.send('monitor:stats', payload);
   });
 
+  autoUpdaterManager.setWindow(mainWindow);
+
   mainWindow.on('closed', () => {
+    autoUpdaterManager.setWindow(null);
     mainWindow = null;
   });
 }
@@ -112,6 +117,9 @@ function registerIpcHandlers() {
   ipcMain.handle('ssh:disconnect', (_, sessionId) => {
     sshManager.disconnect(sessionId);
     monitorService.stopMonitoring(sessionId);
+  });
+  ipcMain.handle('ssh:testConnection', async (_, host) => {
+    return sshManager.testConnection(host);
   });
 
   // SFTP
@@ -178,6 +186,20 @@ function registerIpcHandlers() {
       return result.filePaths[0];
     }
     return null;
+  });
+
+  // Auto Updater
+  ipcMain.handle('updater:getStatus', () => {
+    return autoUpdaterManager.getState();
+  });
+  ipcMain.handle('updater:check', async () => {
+    return autoUpdaterManager.checkForUpdates();
+  });
+  ipcMain.handle('updater:download', async () => {
+    return autoUpdaterManager.downloadUpdate();
+  });
+  ipcMain.handle('updater:install', () => {
+    autoUpdaterManager.quitAndInstall();
   });
 }
 
