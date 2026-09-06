@@ -12,8 +12,11 @@ import { SnippetsView } from './components/SnippetsView';
 import { SettingsView } from './components/SettingsView';
 import { VaultModal } from './components/VaultModal';
 import { TabItem, TabType, HostProfile, Snippet, TunnelConfig, BesTTYSettings, VaultStatus } from './types';
+import { I18nProvider, useTranslation } from './i18n';
 
-export const App: React.FC = () => {
+const MainApp: React.FC = () => {
+  const { locale } = useTranslation();
+
   // Navigation & Tabs State
   const [tabs, setTabs] = useState<TabItem[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>('hosts-view');
@@ -26,6 +29,7 @@ export const App: React.FC = () => {
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [tunnels, setTunnels] = useState<TunnelConfig[]>([]);
   const [settings, setSettings] = useState<BesTTYSettings>({
+    locale: 'ru',
     theme: 'fluent-dark',
     fontFamily: 'Cascadia Code, Consolas, monospace',
     fontSize: 14,
@@ -36,6 +40,18 @@ export const App: React.FC = () => {
     sftpFollowTerminal: true,
     enableHardwareAcceleration: true,
   });
+
+  const isLight = settings.theme === 'fluent-light';
+
+  useEffect(() => {
+    if (isLight) {
+      document.documentElement.classList.add('light');
+      document.documentElement.classList.remove('dark');
+    } else {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    }
+  }, [isLight]);
 
   // Host Management Modals
   const [isHostModalOpen, setIsHostModalOpen] = useState(false);
@@ -181,7 +197,6 @@ export const App: React.FC = () => {
     setTabs(nextTabs);
 
     if (tabToClose?.sessionId && tabToClose.type === 'terminal') {
-      // Check if other tabs use this session
       const hasOtherTabsWithSession = nextTabs.some((t) => t.sessionId === tabToClose.sessionId);
       if (!hasOtherTabsWithSession) {
         window.api?.ssh.disconnect(tabToClose.sessionId);
@@ -224,7 +239,6 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteHost = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this host profile?')) return;
     await window.api.vault.deleteHost(id);
     setHosts(await window.api.vault.getHosts());
   };
@@ -243,11 +257,14 @@ export const App: React.FC = () => {
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#181818] overflow-hidden">
+    <div className={`flex flex-col h-screen w-screen overflow-hidden ${
+      isLight ? 'bg-[#f3f3f3] text-slate-800' : 'bg-[#181818] text-slate-100'
+    }`}>
       {/* Titlebar with tabs and Windows 11 controls */}
       <TitleBar
         tabs={tabs}
         activeTabId={activeTabId}
+        isLight={isLight}
         onSelectTab={(id) => {
           setActiveTabId(id);
           const t = tabs.find((item) => item.id === id);
@@ -265,6 +282,7 @@ export const App: React.FC = () => {
         {/* Left Navigation Sidebar */}
         <Sidebar
           currentView={currentView}
+          isLight={isLight}
           onSelectView={(view) => {
             setCurrentView(view);
             if (view !== 'hosts') {
@@ -285,6 +303,7 @@ export const App: React.FC = () => {
           {currentView === 'hosts' && (
             <HostList
               hosts={hosts}
+              isLight={isLight}
               onConnect={handleConnect}
               onEdit={(h) => {
                 setEditingHost(h);
@@ -298,13 +317,17 @@ export const App: React.FC = () => {
             />
           )}
 
-          {/* Active Terminal Tab View */}
+          {/* Active Terminal Tab View with SmarTTY Sidebar */}
           {currentView === 'terminal' && activeTab && activeTab.sessionId && (
             <TerminalView
               sessionId={activeTab.sessionId}
               host={activeSessions.get(activeTab.sessionId)}
+              isLight={isLight}
               onOpenSftp={() => handleOpenSftp(activeTab.sessionId!)}
               onOpenMonitor={() => handleOpenMonitor(activeTab.sessionId!)}
+              onOpenFileInEditor={(filePath, fileName) =>
+                handleOpenFileInEditor(activeTab.sessionId!, filePath, fileName)
+              }
             />
           )}
 
@@ -325,6 +348,7 @@ export const App: React.FC = () => {
               sessionId={activeTab.sessionId}
               filePath={activeTab.filePath}
               fileName={activeTab.title}
+              isLight={isLight}
               onClose={() => handleCloseTab(activeTab.id)}
               onModifiedChange={(isMod) => {
                 setTabs((prev) =>
@@ -358,10 +382,28 @@ export const App: React.FC = () => {
             />
           )}
 
+          {/* Snippets View */}
+          {currentView === 'editor' && !activeTab?.filePath && (
+            <SnippetsView
+              snippets={snippets}
+              onRunSnippet={handleRunSnippet}
+              onSaveSnippet={async (snippet) => {
+                await window.api.vault.saveSnippet(snippet);
+                setSnippets(await window.api.vault.getSnippets());
+              }}
+              onDeleteSnippet={async (id) => {
+                await window.api.vault.deleteSnippet(id);
+                setSnippets(await window.api.vault.getSnippets());
+              }}
+              hasActiveSession={activeSessions.size > 0}
+            />
+          )}
+
           {/* Settings View */}
           {currentView === 'settings' && (
             <SettingsView
               settings={settings}
+              isLight={isLight}
               onSaveSettings={async (newSettings) => {
                 await window.api.vault.saveSettings(newSettings);
                 setSettings(await window.api.vault.getSettings());
@@ -375,6 +417,7 @@ export const App: React.FC = () => {
       {/* Modals */}
       <HostModal
         isOpen={isHostModalOpen}
+        isLight={isLight}
         onClose={() => setIsHostModalOpen(false)}
         onSave={handleSaveHost}
         hostToEdit={editingHost}
@@ -383,11 +426,20 @@ export const App: React.FC = () => {
 
       <VaultModal
         isOpen={isVaultModalOpen}
+        isLight={isLight}
         onClose={() => setIsVaultModalOpen(false)}
         vaultStatus={vaultStatus}
         onUnlockSuccess={loadVaultData}
       />
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <I18nProvider initialLocale="ru">
+      <MainApp />
+    </I18nProvider>
   );
 };
 

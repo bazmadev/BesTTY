@@ -1,24 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { BesTTYSettings } from '../types';
-import { Settings, Shield, Terminal, Palette, FolderTree, Check, Save } from 'lucide-react';
+import { useTranslation, SupportedLocale } from '../i18n';
+import { Settings, Shield, Terminal, Palette, FolderTree, Check, Save, Languages, Sun, Moon } from 'lucide-react';
 
 interface SettingsViewProps {
   settings: BesTTYSettings;
+  isLight?: boolean;
   onSaveSettings: (settings: Partial<BesTTYSettings>) => void;
   onSetupVault: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
+  isLight = false,
   onSaveSettings,
   onSetupVault,
 }) => {
+  const { t, locale, setLocale } = useTranslation();
   const [localSettings, setLocalSettings] = useState<BesTTYSettings>(settings);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     setLocalSettings(settings);
   }, [settings]);
+
+  const handleLanguageChange = (newLocale: SupportedLocale) => {
+    setLocale(newLocale);
+    const updated = { ...localSettings, locale: newLocale };
+    setLocalSettings(updated);
+    onSaveSettings(updated);
+  };
+
+  const handleThemeChange = (newTheme: BesTTYSettings['theme']) => {
+    const updated = { ...localSettings, theme: newTheme };
+    setLocalSettings(updated);
+    onSaveSettings(updated);
+  };
 
   const handleSave = () => {
     onSaveSettings(localSettings);
@@ -27,17 +44,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#181818] p-6 overflow-y-auto select-none">
+    <div className={`flex-1 flex flex-col h-full p-6 overflow-y-auto select-none ${
+      isLight ? 'bg-[#f5f5f5] text-slate-800' : 'bg-[#181818] text-slate-100'
+    }`}>
       <div className="max-w-3xl mx-auto w-full space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#2d2d2d]">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-500/20">
           <div>
-            <h2 className="text-xl font-bold text-white flex items-center space-x-2">
-              <Settings className="w-6 h-6 text-sky-400" />
-              <span>Application Settings</span>
+            <h2 className="text-xl font-bold flex items-center space-x-2">
+              <Settings className="w-6 h-6 text-sky-500" />
+              <span>{t('settings.title')}</span>
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Configure terminal emulation, SmarTTY features, themes and security.
+              {t('settings.subtitle')}
             </p>
           </div>
 
@@ -46,24 +65,100 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="flex items-center space-x-1.5 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-lg shadow transition-all"
           >
             {saved ? <Check className="w-4 h-4 text-emerald-300" /> : <Save className="w-4 h-4" />}
-            <span>{saved ? 'Saved!' : 'Save Settings'}</span>
+            <span>{saved ? t('settings.saved') : t('settings.saveSettings')}</span>
           </button>
         </div>
 
+        {/* Language & Theme Customization */}
+        <div className={`border rounded-xl p-5 space-y-4 shadow-sm ${
+          isLight ? 'bg-white border-slate-200' : 'bg-[#202020] border-[#303030]'
+        }`}>
+          <h3 className="text-sm font-semibold flex items-center space-x-2">
+            <Languages className="w-4 h-4 text-sky-500" />
+            <span>{t('settings.language')} & {t('settings.theme')}</span>
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Language Selector */}
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-medium">{t('settings.language')}</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleLanguageChange('ru')}
+                  className={`py-2 px-3 rounded-lg text-xs font-medium border flex items-center justify-center space-x-2 transition-all ${
+                    locale === 'ru'
+                      ? 'bg-sky-600 text-white border-sky-500 shadow'
+                      : isLight ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-[#272727] border-[#3d3d3d] text-slate-300 hover:bg-[#333]'
+                  }`}
+                >
+                  <span>🇷🇺</span>
+                  <span>Русский</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleLanguageChange('en')}
+                  className={`py-2 px-3 rounded-lg text-xs font-medium border flex items-center justify-center space-x-2 transition-all ${
+                    locale === 'en'
+                      ? 'bg-sky-600 text-white border-sky-500 shadow'
+                      : isLight ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-[#272727] border-[#3d3d3d] text-slate-300 hover:bg-[#333]'
+                  }`}
+                >
+                  <span>🇺🇸</span>
+                  <span>English</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Theme Selector */}
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-medium">{t('settings.theme')}</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleThemeChange('fluent-dark')}
+                  className={`py-2 px-3 rounded-lg text-xs font-medium border flex items-center justify-center space-x-2 transition-all ${
+                    localSettings.theme === 'fluent-dark'
+                      ? 'bg-sky-600 text-white border-sky-500 shadow'
+                      : isLight ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-[#272727] border-[#3d3d3d] text-slate-300 hover:bg-[#333]'
+                  }`}
+                >
+                  <Moon className="w-3.5 h-3.5" />
+                  <span>{t('settings.themeDark')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleThemeChange('fluent-light')}
+                  className={`py-2 px-3 rounded-lg text-xs font-medium border flex items-center justify-center space-x-2 transition-all ${
+                    localSettings.theme === 'fluent-light'
+                      ? 'bg-sky-600 text-white border-sky-500 shadow'
+                      : isLight ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-[#272727] border-[#3d3d3d] text-slate-300 hover:bg-[#333]'
+                  }`}
+                >
+                  <Sun className="w-3.5 h-3.5" />
+                  <span>{t('settings.themeLight')}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* SmarTTY Signature Features */}
-        <div className="bg-[#202020] border border-[#303030] rounded-xl p-5 space-y-4">
-          <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
-            <FolderTree className="w-4 h-4 text-amber-400" />
-            <span>SmarTTY Smart Bash Integration</span>
+        <div className={`border rounded-xl p-5 space-y-4 shadow-sm ${
+          isLight ? 'bg-white border-slate-200' : 'bg-[#202020] border-[#303030]'
+        }`}>
+          <h3 className="text-sm font-semibold flex items-center space-x-2">
+            <FolderTree className="w-4 h-4 text-amber-500" />
+            <span>{t('settings.smarttyFeatures')}</span>
           </h3>
 
           <div className="flex items-center justify-between">
             <div>
-              <span className="text-xs font-medium text-slate-200 block">
-                Auto-sync SFTP Explorer with Terminal Working Directory (OSC 7)
+              <span className="text-xs font-medium block">
+                {t('settings.osc7Title')}
               </span>
               <span className="text-[11px] text-slate-400 block mt-0.5">
-                When you run <code className="text-sky-300">cd /var/www</code> in the terminal, the SFTP panel will automatically navigate to that directory.
+                {t('settings.osc7Desc')}
               </span>
             </div>
             <input
@@ -76,13 +171,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             />
           </div>
 
-          <div className="flex items-center justify-between pt-3 border-t border-[#2a2a2a]">
+          <div className="flex items-center justify-between pt-3 border-t border-slate-500/15">
             <div>
-              <span className="text-xs font-medium text-slate-200 block">
-                DirectX / GPU Hardware Acceleration
+              <span className="text-xs font-medium block">
+                {t('settings.gpuTitle')}
               </span>
               <span className="text-[11px] text-slate-400 block mt-0.5">
-                Utilize Windows GPU text rendering pipeline for smooth 120+ FPS terminal scrolling.
+                {t('settings.gpuDesc')}
               </span>
             </div>
             <input
@@ -97,19 +192,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
 
         {/* Terminal Emulation Settings */}
-        <div className="bg-[#202020] border border-[#303030] rounded-xl p-5 space-y-4">
-          <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
-            <Terminal className="w-4 h-4 text-sky-400" />
-            <span>Terminal Appearance & Font</span>
+        <div className={`border rounded-xl p-5 space-y-4 shadow-sm ${
+          isLight ? 'bg-white border-slate-200' : 'bg-[#202020] border-[#303030]'
+        }`}>
+          <h3 className="text-sm font-semibold flex items-center space-x-2">
+            <Terminal className="w-4 h-4 text-sky-500" />
+            <span>{t('settings.terminalAppearance')}</span>
           </h3>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Font Family</label>
+              <label className="block text-xs text-slate-400 mb-1">{t('settings.fontFamily')}</label>
               <select
                 value={localSettings.fontFamily}
                 onChange={(e) => setLocalSettings({ ...localSettings, fontFamily: e.target.value })}
-                className="w-full bg-[#272727] border border-[#3d3d3d] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500 font-mono"
+                className={`w-full border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
+                  isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                }`}
               >
                 <option value="Cascadia Code, Consolas, monospace">Cascadia Code (Windows 11 Native)</option>
                 <option value="JetBrains Mono, monospace">JetBrains Mono</option>
@@ -119,7 +218,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Font Size (px)</label>
+              <label className="block text-xs text-slate-400 mb-1">{t('settings.fontSize')}</label>
               <input
                 type="number"
                 min={10}
@@ -128,20 +227,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 onChange={(e) =>
                   setLocalSettings({ ...localSettings, fontSize: Number(e.target.value) })
                 }
-                className="w-full bg-[#272727] border border-[#3d3d3d] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500 font-mono"
+                className={`w-full border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
+                  isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                }`}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4 pt-2">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Cursor Style</label>
+              <label className="block text-xs text-slate-400 mb-1">{t('settings.cursorStyle')}</label>
               <select
                 value={localSettings.cursorStyle}
                 onChange={(e) =>
                   setLocalSettings({ ...localSettings, cursorStyle: e.target.value as any })
                 }
-                className="w-full bg-[#272727] border border-[#3d3d3d] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500"
+                className={`w-full border rounded px-3 py-1.5 text-xs focus:outline-none focus:border-sky-500 ${
+                  isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                }`}
               >
                 <option value="block">Block</option>
                 <option value="underline">Underline</option>
@@ -150,7 +253,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Cursor Blinking</label>
+              <label className="block text-xs text-slate-400 mb-1">{t('settings.cursorBlink')}</label>
               <div className="pt-2">
                 <input
                   type="checkbox"
@@ -164,33 +267,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Scrollback Lines</label>
+              <label className="block text-xs text-slate-400 mb-1">{t('settings.scrollback')}</label>
               <input
                 type="number"
                 value={localSettings.scrollback}
                 onChange={(e) =>
                   setLocalSettings({ ...localSettings, scrollback: Number(e.target.value) })
                 }
-                className="w-full bg-[#272727] border border-[#3d3d3d] rounded px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-sky-500"
+                className={`w-full border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
+                  isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                }`}
               />
             </div>
           </div>
         </div>
 
         {/* Security & Vault */}
-        <div className="bg-[#202020] border border-[#303030] rounded-xl p-5 space-y-4">
-          <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
-            <Shield className="w-4 h-4 text-emerald-400" />
-            <span>Encrypted Vault & Master Key</span>
+        <div className={`border rounded-xl p-5 space-y-4 shadow-sm ${
+          isLight ? 'bg-white border-slate-200' : 'bg-[#202020] border-[#303030]'
+        }`}>
+          <h3 className="text-sm font-semibold flex items-center space-x-2">
+            <Shield className="w-4 h-4 text-emerald-500" />
+            <span>{t('settings.securityTitle')}</span>
           </h3>
           <p className="text-xs text-slate-400">
-            BesTTY encrypts your server passwords, private keys and tunnel settings locally using AES-256-GCM.
+            {t('settings.securityDesc')}
           </p>
           <button
             onClick={onSetupVault}
-            className="px-4 py-2 rounded-lg bg-[#2b2b2b] hover:bg-[#333] border border-[#444] text-xs font-semibold text-slate-200 hover:text-white transition-colors"
+            className={`px-4 py-2 rounded-lg border text-xs font-semibold transition-colors ${
+              isLight ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800' : 'bg-[#2b2b2b] hover:bg-[#333] border-[#444] text-slate-200 hover:text-white'
+            }`}
           >
-            Configure / Change Master Password
+            {t('settings.changeMaster')}
           </button>
         </div>
       </div>

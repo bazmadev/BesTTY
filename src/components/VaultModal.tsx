@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Shield, Lock, Key, X, AlertCircle } from 'lucide-react';
+import { Lock, X, AlertCircle } from 'lucide-react';
 import { VaultStatus } from '../types';
+import { useTranslation } from '../i18n';
 
 interface VaultModalProps {
   isOpen: boolean;
+  isLight?: boolean;
   onClose: () => void;
   vaultStatus: VaultStatus;
   onUnlockSuccess: () => void;
@@ -11,10 +13,12 @@ interface VaultModalProps {
 
 export const VaultModal: React.FC<VaultModalProps> = ({
   isOpen,
+  isLight = false,
   onClose,
   vaultStatus,
   onUnlockSuccess,
 }) => {
+  const { t } = useTranslation();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +31,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     setError(null);
 
     if (!vaultStatus.isConfigured && password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError(t('vault.mismatch'));
       return;
     }
 
@@ -38,7 +42,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
         onUnlockSuccess();
         onClose();
       } else {
-        setError('Incorrect master password');
+        setError(t('vault.incorrect'));
       }
     } catch (err: any) {
       setError(err.message || 'Unlock error');
@@ -49,27 +53,31 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-[#202020] border border-[#383838] w-full max-w-sm rounded-xl shadow-2xl p-6 space-y-4">
-        <div className="flex items-center justify-between border-b border-[#303030] pb-3">
+      <div className={`border w-full max-w-sm rounded-xl shadow-2xl p-6 space-y-4 ${
+        isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-[#202020] border-[#383838] text-white'
+      }`}>
+        <div className={`flex items-center justify-between border-b pb-3 ${
+          isLight ? 'border-slate-200' : 'border-[#303030]'
+        }`}>
           <div className="flex items-center space-x-2">
-            <Lock className="w-5 h-5 text-amber-400" />
-            <h3 className="text-sm font-semibold text-white">
-              {vaultStatus.isConfigured ? 'Unlock Secure Vault' : 'Set Master Password'}
+            <Lock className="w-5 h-5 text-amber-500" />
+            <h3 className="text-sm font-semibold">
+              {vaultStatus.isConfigured ? t('vault.unlockTitle') : t('vault.setTitle')}
             </h3>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-200">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <p className="text-xs text-slate-400 leading-relaxed">
           {vaultStatus.isConfigured
-            ? 'Enter your master password to decrypt saved SSH server credentials, passwords, and private keys.'
-            : 'Protect your server keys and login credentials with AES-256-GCM encryption derived from your master password.'}
+            ? t('vault.unlockDesc')
+            : t('vault.setDesc')}
         </p>
 
         {error && (
-          <div className="flex items-center space-x-1.5 p-2 bg-rose-950/50 border border-rose-800 rounded text-xs text-rose-300">
+          <div className="flex items-center space-x-1.5 p-2 bg-rose-500/15 border border-rose-500/40 rounded text-xs text-rose-600 dark:text-rose-300">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{error}</span>
           </div>
@@ -77,26 +85,30 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Master Password</label>
+            <label className="block text-xs text-slate-400 mb-1">{t('vault.masterPassword')}</label>
             <input
               type="password"
               autoFocus
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-[#272727] border border-[#3d3d3d] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500 font-mono"
+              className={`w-full border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
+                isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+              }`}
             />
           </div>
 
           {!vaultStatus.isConfigured && (
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Confirm Password</label>
+              <label className="block text-xs text-slate-400 mb-1">{t('vault.confirmPassword')}</label>
               <input
                 type="password"
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full bg-[#272727] border border-[#3d3d3d] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500 font-mono"
+                className={`w-full border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
+                  isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                }`}
               />
             </div>
           )}
@@ -105,9 +117,9 @@ export const VaultModal: React.FC<VaultModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded text-xs text-slate-300 hover:bg-white/10"
+              className="px-3 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-500/10"
             >
-              Cancel
+              {t('modal.cancel')}
             </button>
             <button
               type="submit"
@@ -115,10 +127,10 @@ export const VaultModal: React.FC<VaultModalProps> = ({
               className="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-semibold shadow"
             >
               {loading
-                ? 'Processing...'
+                ? t('vault.processing')
                 : vaultStatus.isConfigured
-                ? 'Unlock'
-                : 'Set Password'}
+                ? t('vault.unlock')
+                : t('vault.setPassword')}
             </button>
           </div>
         </form>

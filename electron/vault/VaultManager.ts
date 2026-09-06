@@ -13,6 +13,7 @@ interface VaultData {
 }
 
 const DEFAULT_SETTINGS: BesTTYSettings = {
+  locale: 'ru',
   theme: 'fluent-dark',
   fontFamily: 'Cascadia Code, Consolas, monospace',
   fontSize: 14,

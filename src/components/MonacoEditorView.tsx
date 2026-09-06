@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { Save, ShieldAlert, GitCompare, Check, AlertCircle, RefreshCw, X } from 'lucide-react';
+import { useTranslation } from '../i18n';
 
 interface MonacoEditorViewProps {
   sessionId: string;
   filePath: string;
   fileName: string;
+  isLight?: boolean;
   onClose?: () => void;
   onModifiedChange?: (isModified: boolean) => void;
 }
@@ -14,9 +16,11 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
   sessionId,
   filePath,
   fileName,
+  isLight = false,
   onClose,
   onModifiedChange,
 }) => {
+  const { t } = useTranslation();
   const [content, setContent] = useState<string>('');
   const [originalContent, setOriginalContent] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -25,7 +29,6 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
   const [isDiffMode, setIsDiffMode] = useState<boolean>(false);
   const [isDirty, setIsDirty] = useState<boolean>(false);
 
-  // Determine Monaco Language from file extension
   const getLanguage = (name: string): string => {
     const ext = name.split('.').pop()?.toLowerCase();
     switch (ext) {
@@ -109,7 +112,7 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
       setOriginalContent(content);
       setIsDirty(false);
       onModifiedChange?.(false);
-      setSaveMessage({ text: 'Saved successfully!', type: 'success' });
+      setSaveMessage({ text: t('editor.savedSuccess'), type: 'success' });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({
@@ -121,7 +124,6 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
     }
   };
 
-  // Keyboard shortcut Ctrl+S
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -134,16 +136,20 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
   }, [content, sessionId, filePath]);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#1e1e1e] overflow-hidden select-none">
+    <div className={`flex-1 flex flex-col h-full overflow-hidden select-none ${
+      isLight ? 'bg-white text-slate-800' : 'bg-[#1e1e1e] text-slate-100'
+    }`}>
       {/* Editor Header */}
-      <div className="h-10 bg-[#252525] border-b border-[#333] flex items-center justify-between px-4 text-xs">
+      <div className={`h-10 border-b flex items-center justify-between px-4 text-xs ${
+        isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#252525] border-[#333]'
+      }`}>
         <div className="flex items-center space-x-2 truncate">
-          <span className="font-semibold text-white font-mono">{fileName}</span>
-          <span className="text-slate-500 font-mono text-[11px] truncate max-w-sm">
+          <span className="font-semibold font-mono">{fileName}</span>
+          <span className="text-slate-400 font-mono text-[11px] truncate max-w-sm">
             ({filePath})
           </span>
           {isDirty && (
-            <span className="w-2 h-2 rounded-full bg-amber-400" title="Unsaved changes" />
+            <span className="w-2 h-2 rounded-full bg-amber-500" title={t('editor.unsaved')} />
           )}
         </div>
 
@@ -153,8 +159,8 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
             <div
               className={`flex items-center space-x-1 text-xs px-2 py-0.5 rounded ${
                 saveMessage.type === 'success'
-                  ? 'bg-emerald-500/20 text-emerald-300'
-                  : 'bg-rose-500/20 text-rose-300'
+                  ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300'
+                  : 'bg-rose-500/20 text-rose-600 dark:text-rose-300'
               }`}
             >
               {saveMessage.type === 'success' ? (
@@ -172,41 +178,41 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
             className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs transition-colors ${
               isDiffMode
                 ? 'bg-sky-600 text-white'
-                : 'bg-[#333] text-slate-300 hover:bg-[#444] hover:text-white'
+                : isLight ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-[#333] text-slate-300 hover:bg-[#444] hover:text-white'
             }`}
             title="Toggle Diff View"
           >
             <GitCompare className="w-3.5 h-3.5" />
-            <span>Diff</span>
+            <span>{t('editor.diff')}</span>
           </button>
 
           {/* Sudo Save Button */}
           <button
             onClick={() => handleSave(true)}
             disabled={isSaving}
-            className="flex items-center space-x-1 px-2.5 py-1 rounded bg-amber-600/20 border border-amber-500/40 text-amber-300 hover:bg-amber-600 hover:text-white text-xs transition-colors"
-            title="Save with elevated sudo privileges (sudo tee)"
+            className="flex items-center space-x-1 px-2.5 py-1 rounded bg-amber-500/15 border border-amber-500/40 text-amber-600 dark:text-amber-300 hover:bg-amber-600 hover:text-white text-xs transition-colors"
+            title={t('editor.saveElevatedTip')}
           >
             <ShieldAlert className="w-3.5 h-3.5" />
-            <span>Sudo Save</span>
+            <span>{t('editor.sudoSave')}</span>
           </button>
 
           {/* Standard Save Button */}
           <button
             onClick={() => handleSave(false)}
             disabled={isSaving || !isDirty}
-            className="flex items-center space-x-1.5 px-3 py-1 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-medium text-xs shadow-md transition-colors"
+            className="flex items-center space-x-1.5 px-3 py-1 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-medium text-xs shadow transition-colors"
             title="Save (Ctrl+S)"
           >
             <Save className="w-3.5 h-3.5" />
-            <span>{isSaving ? 'Saving...' : 'Save'}</span>
+            <span>{isSaving ? t('editor.saving') : t('editor.save')}</span>
           </button>
 
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10"
-              title="Close File"
+              className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-500/10"
+              title={t('editor.closeFile')}
             >
               <X className="w-4 h-4" />
             </button>
@@ -218,15 +224,15 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
       <div className="flex-1 w-full h-full relative">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2">
-            <RefreshCw className="w-6 h-6 animate-spin text-sky-400" />
-            <span className="text-xs">Loading file from remote server...</span>
+            <RefreshCw className="w-6 h-6 animate-spin text-sky-500" />
+            <span className="text-xs">{t('editor.loading')}</span>
           </div>
         ) : isDiffMode ? (
           <DiffEditor
             original={originalContent}
             modified={content}
             language={getLanguage(fileName)}
-            theme="vs-dark"
+            theme={isLight ? 'vs' : 'vs-dark'}
             options={{
               readOnly: false,
               automaticLayout: true,
@@ -239,7 +245,7 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
             height="100%"
             language={getLanguage(fileName)}
             value={content}
-            theme="vs-dark"
+            theme={isLight ? 'vs' : 'vs-dark'}
             onChange={handleEditorChange}
             options={{
               automaticLayout: true,

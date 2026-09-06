@@ -101,6 +101,7 @@ export interface Snippet {
 }
 
 export interface BesTTYSettings {
+  locale: 'en' | 'ru';
   theme: 'fluent-dark' | 'fluent-light' | 'dracula' | 'one-dark' | 'nord';
   fontFamily: string;
   fontSize: number;

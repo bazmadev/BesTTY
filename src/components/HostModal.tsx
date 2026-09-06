@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { HostProfile, AuthType } from '../types';
-import { X, Key, Lock, Terminal, Shield, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from '../i18n';
+import { parseSSHConnectionString } from '../utils/sshParser';
+import { X, Key, Lock, Terminal, Shield, ChevronDown, ChevronUp, Eye, EyeOff, Sparkles } from 'lucide-react';
 
 interface HostModalProps {
   isOpen: boolean;
+  isLight?: boolean;
   onClose: () => void;
   onSave: (host: HostProfile) => void;
   hostToEdit?: HostProfile | null;
@@ -12,11 +15,14 @@ interface HostModalProps {
 
 export const HostModal: React.FC<HostModalProps> = ({
   isOpen,
+  isLight = false,
   onClose,
   onSave,
   hostToEdit,
   availableHosts,
 }) => {
+  const { t } = useTranslation();
+  const [smartPaste, setSmartPaste] = useState('');
   const [name, setName] = useState('');
   const [host, setHost] = useState('');
   const [port, setPort] = useState(22);
@@ -48,6 +54,7 @@ export const HostModal: React.FC<HostModalProps> = ({
       setColor(hostToEdit.color || '#0078d4');
       setDefaultPath(hostToEdit.defaultPath || '');
       setProxyJumpId(hostToEdit.proxyJumpId || '');
+      setSmartPaste('');
     } else {
       setName('');
       setHost('');
@@ -62,8 +69,29 @@ export const HostModal: React.FC<HostModalProps> = ({
       setColor('#0078d4');
       setDefaultPath('');
       setProxyJumpId('');
+      setSmartPaste('');
     }
   }, [hostToEdit, isOpen]);
+
+  // Handle Smart Paste decomposition
+  const handleSmartPasteChange = (val: string) => {
+    setSmartPaste(val);
+    if (!val.trim()) return;
+
+    const parsed = parseSSHConnectionString(val);
+    if (parsed.host) {
+      setHost(parsed.host);
+      setUsername(parsed.username || 'root');
+      setPort(parsed.port || 22);
+      if (!name) {
+        setName(`${parsed.username}@${parsed.host}`);
+      }
+      if (parsed.privateKeyPath) {
+        setAuthType('privateKey');
+        setPrivateKeyPath(parsed.privateKeyPath);
+      }
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -95,18 +123,22 @@ export const HostModal: React.FC<HostModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-[#202020] border border-[#383838] w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className={`border w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
+        isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-[#202020] border-[#383838] text-white'
+      }`}>
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#303030] flex items-center justify-between">
+        <div className={`px-6 py-4 border-b flex items-center justify-between ${
+          isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#252525] border-[#303030]'
+        }`}>
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
-            <h2 className="text-base font-semibold text-white">
-              {hostToEdit ? 'Edit SSH Connection' : 'New SSH Connection'}
+            <h2 className="text-base font-semibold">
+              {hostToEdit ? t('modal.editTitle') : t('modal.addTitle')}
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-black/10 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -114,26 +146,49 @@ export const HostModal: React.FC<HostModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 flex-1">
-          {/* Friendly Name & Color */}
+          {/* Smart SSH Command Paste Bar */}
+          <div className={`p-3 rounded-lg border flex flex-col space-y-1.5 ${
+            isLight ? 'bg-sky-50/70 border-sky-200' : 'bg-sky-950/20 border-sky-500/30'
+          }`}>
+            <label className="text-xs font-semibold text-sky-500 flex items-center space-x-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{t('modal.smartPasteLabel')}</span>
+            </label>
+            <input
+              type="text"
+              placeholder={t('modal.smartPastePlaceholder')}
+              value={smartPaste}
+              onChange={(e) => handleSmartPasteChange(e.target.value)}
+              className={`w-full border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
+                isLight ? 'bg-white border-sky-300 text-slate-900' : 'bg-[#181818] border-[#383838] text-white'
+              }`}
+            />
+          </div>
+
+          {/* Friendly Name & Group */}
           <div className="grid grid-cols-4 gap-3">
             <div className="col-span-3">
-              <label className="block text-xs text-slate-400 mb-1 font-medium">Session Name</label>
+              <label className="block text-xs text-slate-400 mb-1 font-medium">{t('modal.sessionName')}</label>
               <input
                 type="text"
                 placeholder="e.g. Prod-Web-01"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                className={`w-full border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-sky-500 ${
+                  isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                }`}
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-medium">Group</label>
+              <label className="block text-xs text-slate-400 mb-1 font-medium">{t('modal.group')}</label>
               <input
                 type="text"
                 placeholder="Group"
                 value={group}
                 onChange={(e) => setGroup(e.target.value)}
-                className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                className={`w-full border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-sky-500 ${
+                  isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                }`}
               />
             </div>
           </div>
@@ -141,54 +196,62 @@ export const HostModal: React.FC<HostModalProps> = ({
           {/* Host & Port */}
           <div className="grid grid-cols-4 gap-3">
             <div className="col-span-3">
-              <label className="block text-xs text-slate-400 mb-1 font-medium">Host / IP Address *</label>
+              <label className="block text-xs text-slate-400 mb-1 font-medium">{t('modal.hostIp')}</label>
               <input
                 type="text"
                 required
                 placeholder="192.168.1.100 or server.domain.com"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
-                className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+                className={`w-full border rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-sky-500 ${
+                  isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                }`}
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-medium">Port</label>
+              <label className="block text-xs text-slate-400 mb-1 font-medium">{t('modal.port')}</label>
               <input
                 type="number"
                 value={port}
                 onChange={(e) => setPort(Number(e.target.value))}
-                className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+                className={`w-full border rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-sky-500 ${
+                  isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                }`}
               />
             </div>
           </div>
 
           {/* Username */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1 font-medium">Username *</label>
+            <label className="block text-xs text-slate-400 mb-1 font-medium">{t('modal.username')}</label>
             <input
               type="text"
               required
               placeholder="root, ubuntu, debian..."
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+              className={`w-full border rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-sky-500 ${
+                isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+              }`}
             />
           </div>
 
           {/* Authentication Tabs */}
           <div>
-            <label className="block text-xs text-slate-400 mb-2 font-medium">Authentication Method</label>
-            <div className="grid grid-cols-3 gap-2 bg-[#181818] p-1 rounded-lg border border-[#333]">
+            <label className="block text-xs text-slate-400 mb-2 font-medium">{t('modal.authMethod')}</label>
+            <div className={`grid grid-cols-3 gap-2 p-1 rounded-lg border ${
+              isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#181818] border-[#333]'
+            }`}>
               <button
                 type="button"
                 onClick={() => setAuthType('password')}
                 className={`py-1.5 text-xs rounded-md font-medium transition-all ${
                   authType === 'password'
                     ? 'bg-sky-600 text-white shadow'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Password
+                {t('modal.password')}
               </button>
               <button
                 type="button"
@@ -196,10 +259,10 @@ export const HostModal: React.FC<HostModalProps> = ({
                 className={`py-1.5 text-xs rounded-md font-medium transition-all ${
                   authType === 'privateKey'
                     ? 'bg-sky-600 text-white shadow'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Private Key
+                {t('modal.privateKey')}
               </button>
               <button
                 type="button"
@@ -207,10 +270,10 @@ export const HostModal: React.FC<HostModalProps> = ({
                 className={`py-1.5 text-xs rounded-md font-medium transition-all ${
                   authType === 'agent'
                     ? 'bg-sky-600 text-white shadow'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                SSH Agent
+                {t('modal.agent')}
               </button>
             </div>
           </div>
@@ -218,19 +281,21 @@ export const HostModal: React.FC<HostModalProps> = ({
           {/* Password Input */}
           {authType === 'password' && (
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-medium">Password</label>
+              <label className="block text-xs text-slate-400 mb-1 font-medium">{t('modal.password')}</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Leave blank to prompt at connection"
+                  placeholder={t('modal.passwordPlaceholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 pr-10 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+                  className={`w-full border rounded-md px-3 py-1.5 pr-10 text-sm font-mono focus:outline-none focus:border-sky-500 ${
+                    isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                  }`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2.5 top-2 text-slate-400 hover:text-white"
+                  className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-200"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -243,38 +308,44 @@ export const HostModal: React.FC<HostModalProps> = ({
             <div className="space-y-3">
               <div>
                 <label className="block text-xs text-slate-400 mb-1 font-medium">
-                  Private Key File Path (OpenSSH / PPK / PEM)
+                  {t('modal.keyPath')}
                 </label>
                 <input
                   type="text"
                   placeholder="C:\Users\username\.ssh\id_ed25519"
                   value={privateKeyPath}
                   onChange={(e) => setPrivateKeyPath(e.target.value)}
-                  className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+                  className={`w-full border rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-sky-500 ${
+                    isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                  }`}
                 />
               </div>
 
               <div>
                 <label className="block text-xs text-slate-400 mb-1 font-medium">
-                  Or Paste Key Content (RSA / Ed25519)
+                  {t('modal.keyContent')}
                 </label>
                 <textarea
                   rows={3}
                   placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."
                   value={privateKeyContent}
                   onChange={(e) => setPrivateKeyContent(e.target.value)}
-                  className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-sky-500"
+                  className={`w-full border rounded-md px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
+                    isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                  }`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-medium">Passphrase (optional)</label>
+                <label className="block text-xs text-slate-400 mb-1 font-medium">{t('modal.passphrase')}</label>
                 <input
                   type="password"
-                  placeholder="Passphrase to decrypt private key"
+                  placeholder="Passphrase"
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
-                  className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+                  className={`w-full border rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-sky-500 ${
+                    isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                  }`}
                 />
               </div>
             </div>
@@ -282,22 +353,22 @@ export const HostModal: React.FC<HostModalProps> = ({
 
           {/* SSH Agent Notice */}
           {authType === 'agent' && (
-            <div className="bg-[#181818] border border-[#333] rounded-lg p-3 text-xs text-slate-300 flex items-center space-x-2">
+            <div className={`border rounded-lg p-3 text-xs flex items-center space-x-2 ${
+              isLight ? 'bg-sky-50 border-sky-200 text-sky-900' : 'bg-[#181818] border-[#333] text-slate-300'
+            }`}>
               <Shield className="w-5 h-5 text-sky-400 flex-shrink-0" />
-              <span>
-                Using Windows OpenSSH Agent (<code className="text-sky-300">\\.\pipe\openssh-ssh-agent</code>) or Pageant. Keys will be requested directly from your active agent.
-              </span>
+              <span>{t('modal.agentNotice')}</span>
             </div>
           )}
 
           {/* Advanced Accordion */}
-          <div className="pt-2 border-t border-[#303030]">
+          <div className="pt-2 border-t border-slate-500/20">
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center justify-between w-full text-xs text-slate-400 hover:text-white py-1"
+              className="flex items-center justify-between w-full text-xs text-slate-400 hover:text-slate-200 py-1"
             >
-              <span className="font-medium">Advanced Options (ProxyJump, Tag Color, Default Path)</span>
+              <span className="font-medium">{t('modal.advanced')}</span>
               {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
 
@@ -306,14 +377,16 @@ export const HostModal: React.FC<HostModalProps> = ({
                 {/* ProxyJump */}
                 <div>
                   <label className="block text-xs text-slate-400 mb-1 font-medium">
-                    ProxyJump / Bastion Host
+                    {t('modal.proxyJump')}
                   </label>
                   <select
                     value={proxyJumpId}
                     onChange={(e) => setProxyJumpId(e.target.value)}
-                    className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                    className={`w-full border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-sky-500 ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                    }`}
                   >
-                    <option value="">Direct Connection (No ProxyJump)</option>
+                    <option value="">{t('modal.directConnection')}</option>
                     {availableHosts
                       .filter((h) => h.id !== hostToEdit?.id)
                       .map((h) => (
@@ -327,20 +400,22 @@ export const HostModal: React.FC<HostModalProps> = ({
                 {/* Default Remote Directory */}
                 <div>
                   <label className="block text-xs text-slate-400 mb-1 font-medium">
-                    Initial Remote Directory
+                    {t('modal.defaultPath')}
                   </label>
                   <input
                     type="text"
                     placeholder="/var/www/html or ~"
                     value={defaultPath}
                     onChange={(e) => setDefaultPath(e.target.value)}
-                    className="w-full bg-[#272727] border border-[#3d3d3d] rounded-md px-3 py-1.5 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+                    className={`w-full border rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-sky-500 ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                    }`}
                   />
                 </div>
 
                 {/* Color Tag */}
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1 font-medium">Tag Color</label>
+                  <label className="block text-xs text-slate-400 mb-1 font-medium">{t('modal.tagColor')}</label>
                   <div className="flex items-center space-x-2">
                     {colors.map((c) => (
                       <button
@@ -348,7 +423,7 @@ export const HostModal: React.FC<HostModalProps> = ({
                         type="button"
                         onClick={() => setColor(c)}
                         className={`w-6 h-6 rounded-full border-2 transition-transform ${
-                          color === c ? 'scale-110 border-white' : 'border-transparent hover:scale-105'
+                          color === c ? 'scale-110 border-white shadow' : 'border-transparent hover:scale-105'
                         }`}
                         style={{ backgroundColor: c }}
                       />
@@ -360,19 +435,19 @@ export const HostModal: React.FC<HostModalProps> = ({
           </div>
 
           {/* Actions */}
-          <div className="pt-4 border-t border-[#303030] flex items-center justify-end space-x-3">
+          <div className="pt-4 border-t border-slate-500/20 flex items-center justify-end space-x-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-md text-xs font-medium text-slate-300 hover:bg-white/10 transition-colors"
+              className="px-4 py-2 rounded-md text-xs font-medium text-slate-400 hover:bg-slate-500/10 transition-colors"
             >
-              Cancel
+              {t('modal.cancel')}
             </button>
             <button
               type="submit"
               className="px-4 py-2 rounded-md text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white shadow-lg transition-colors"
             >
-              {hostToEdit ? 'Save Changes' : 'Add Host'}
+              {hostToEdit ? t('modal.save') : t('modal.add')}
             </button>
           </div>
         </form>
