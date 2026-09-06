@@ -2,13 +2,13 @@
   "name": "bestty",
   "version": "1.0.0",
   "description": "Modern Next-Gen Open-Source SSH/SFTP Client for Windows 10/11",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "app": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
-    "start": "tsc -p tsconfig.electron.json && concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "app": "npm run build:electron && concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "start": "npm run app",
     "dist": "npm run build && npm run build:electron && electron-builder"
   },
   "keywords": [
