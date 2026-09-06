@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld('api', {
   vault: {
     getStatus: () => ipcRenderer.invoke('vault:getStatus'),
     unlock: (password: string) => ipcRenderer.invoke('vault:unlock', password),
+    setupMasterPassword: (password: string, recoveryKey: string) =>
+      ipcRenderer.invoke('vault:setupMasterPassword', password, recoveryKey),
+    recoverWithKey: (recoveryKey: string, newPassword: string) =>
+      ipcRenderer.invoke('vault:recoverWithKey', recoveryKey, newPassword),
     lock: () => ipcRenderer.invoke('vault:lock'),
     getHosts: () => ipcRenderer.invoke('vault:getHosts'),
     saveHost: (host: HostProfile) => ipcRenderer.invoke('vault:saveHost', host),
@@ -98,6 +102,11 @@ contextBridge.exposeInMainWorld('api', {
 
   dialog: {
     openKeyFile: () => ipcRenderer.invoke('dialog:openKeyFile'),
+  },
+
+  clipboard: {
+    readText: () => ipcRenderer.invoke('clipboard:readText'),
+    writeText: (text: string) => ipcRenderer.invoke('clipboard:writeText', text),
   },
 
   updater: {

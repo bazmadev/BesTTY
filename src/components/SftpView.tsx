@@ -3,7 +3,7 @@ import { SFTPFile } from '../types';
 import { useTranslation } from '../i18n';
 import { 
   Folder, File, FileCode, FileText, FileArchive, CornerLeftUp, 
-  RotateCw, Plus, Trash2, Edit, Key, Shield, Search, ArrowRight, Download, Upload
+  RotateCw, Plus, Trash2, Edit, Key, Shield, Search, ArrowRight, Download, Upload, Terminal as TerminalIcon
 } from 'lucide-react';
 
 interface SftpViewProps {
@@ -11,6 +11,7 @@ interface SftpViewProps {
   isLight?: boolean;
   initialPath?: string;
   onOpenFileInEditor: (filePath: string, fileName: string) => void;
+  onNavigateToTerminal?: (directoryPath: string) => void;
 }
 
 export const SftpView: React.FC<SftpViewProps> = ({
@@ -18,6 +19,7 @@ export const SftpView: React.FC<SftpViewProps> = ({
   isLight = false,
   initialPath = '/',
   onOpenFileInEditor,
+  onNavigateToTerminal,
 }) => {
   const { t } = useTranslation();
   const [currentPath, setCurrentPath] = useState(initialPath);
@@ -220,6 +222,20 @@ export const SftpView: React.FC<SftpViewProps> = ({
           })}
         </div>
 
+        {/* Go to Directory in Active Terminal Button */}
+        <button
+          onClick={() => onNavigateToTerminal?.(currentPath)}
+          className={`px-2.5 py-1 rounded text-xs font-medium flex items-center space-x-1 border transition-colors shadow-sm ${
+            isLight
+              ? 'bg-sky-50 border-sky-300 text-sky-700 hover:bg-sky-100'
+              : 'bg-sky-500/15 border-sky-500/30 text-sky-400 hover:bg-sky-500/25'
+          }`}
+          title={t('sftp.openInTerminalTip')}
+        >
+          <TerminalIcon className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline font-mono">{t('sftp.openInTerminal')}</span>
+        </button>
+
         {/* Search */}
         <div className="relative w-44">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2" />
@@ -355,6 +371,18 @@ export const SftpView: React.FC<SftpViewProps> = ({
                 </td>
                 <td className="py-1.5 px-3 text-center">
                   <div className="flex items-center justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {file.isDirectory && onNavigateToTerminal && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onNavigateToTerminal(file.path);
+                        }}
+                        className="p-1 hover:bg-sky-500/20 text-sky-400 rounded transition-colors"
+                        title={t('sftp.openInTerminalTip')}
+                      >
+                        <TerminalIcon className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     {!file.isDirectory && (
                       <button
                         onClick={(e) => {

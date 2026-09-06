@@ -17,9 +17,10 @@ import { HelpModal } from './components/HelpModal';
 import { TabItem, TabType, HostProfile, Snippet, TunnelConfig, BesTTYSettings, VaultStatus, UpdateState } from './types';
 import { I18nProvider, useTranslation } from './i18n';
 import { parseSSHConnectionString } from './utils/sshParser';
+import { ShieldCheck, Lock, Radio } from 'lucide-react';
 
 const MainApp: React.FC = () => {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
 
   // Navigation & Tabs State
   const [tabs, setTabs] = useState<TabItem[]>([]);
@@ -497,6 +498,22 @@ const MainApp: React.FC = () => {
                   onOpenFileInEditor={(filePath, fileName) =>
                     handleOpenFileInEditor(sftpTab.sessionId!, filePath, fileName)
                   }
+                  onNavigateToTerminal={(folderPath) => {
+                    const termTab = tabs.find(t => t.sessionId === sftpTab.sessionId && t.type === 'terminal');
+                    if (termTab) {
+                      setActiveTabId(termTab.id);
+                      setCurrentView('terminal');
+                      window.api?.ssh.write(sftpTab.sessionId!, `cd "${folderPath}"\n`);
+                    } else {
+                      const host = activeSessions.get(sftpTab.sessionId!);
+                      if (host) {
+                        executeConnection(host, 'terminal');
+                        setTimeout(() => {
+                          window.api?.ssh.write(sftpTab.sessionId!, `cd "${folderPath}"\n`);
+                        }, 600);
+                      }
+                    }
+                  }}
                 />
               );
             }
@@ -606,6 +623,73 @@ const MainApp: React.FC = () => {
               onSetupVault={() => setIsVaultModalOpen(true)}
             />
           )}
+        </div>
+      </div>
+
+      {/* Modern Fluent Bottom Status Bar (Height 24px) */}
+      <div className={`h-6.5 border-t px-3 flex items-center justify-between text-[11px] select-none z-10 ${
+        isLight ? 'bg-[#ebebeb] border-slate-300 text-slate-700' : 'bg-[#181818] border-[#2c2c2c] text-slate-400'
+      }`}>
+        {/* Left: Active connection indicator & sessions count */}
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-1.5 font-mono">
+            <span className={`w-2 h-2 rounded-full ${
+              activeSessions.size > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
+            }`} />
+            <span>
+              {activeSessions.size > 0
+                ? `${t('statusBar.connected')} ${
+                    tabs.find((t) => t.id === activeTabId && t.sessionId)
+                      ? `${activeSessions.get(tabs.find((t) => t.id === activeTabId)!.sessionId!)?.username || ''}@${
+                          activeSessions.get(tabs.find((t) => t.id === activeTabId)!.sessionId!)?.host || 'server'
+                        }`
+                      : `${activeSessions.size} ${t('statusBar.sessions')}`
+                  }`
+                : t('statusBar.noSessions')}
+            </span>
+          </div>
+
+          {tunnels.filter((t) => t.status === 'active').length > 0 && (
+            <div className="flex items-center space-x-1 text-sky-400">
+              <Radio className="w-3 h-3" />
+              <span>
+                {tunnels.filter((t) => t.status === 'active').length} {t('statusBar.tunnelsActive')}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Center: Encrypted Vault Indicator */}
+        <div
+          onClick={() => setIsVaultModalOpen(true)}
+          className="flex items-center space-x-1.5 cursor-pointer hover:text-sky-400 transition-colors"
+          title="Click to configure or unlock AES-256-GCM Vault"
+        >
+          {vaultStatus.isConfigured && vaultStatus.isUnlocked ? (
+            <>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="font-medium text-emerald-400">{t('statusBar.vaultProtected')}</span>
+            </>
+          ) : vaultStatus.isConfigured && !vaultStatus.isUnlocked ? (
+            <>
+              <Lock className="w-3.5 h-3.5 text-rose-400" />
+              <span className="font-medium text-rose-400">Vault Locked</span>
+            </>
+          ) : (
+            <>
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span className="font-medium text-amber-400">{t('statusBar.vaultUnprotected')}</span>
+            </>
+          )}
+        </div>
+
+        {/* Right: Encoding, Terminal type, and App version */}
+        <div className="flex items-center space-x-3 font-mono text-[10px]">
+          <span className="text-slate-500">UTF-8</span>
+          <span className="text-slate-500">xterm-256color</span>
+          <span className="font-semibold text-sky-400">
+            BesTTY v{updateState.currentVersion || '1.0.0'}
+          </span>
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, clipboard } from 'electron';
 import path from 'path';
 import { VaultManager } from './vault/VaultManager';
 import { SSHClientManager } from './ssh/SSHClientManager';
@@ -88,9 +88,19 @@ function registerIpcHandlers() {
   ipcMain.handle('window:close', () => mainWindow?.close());
   ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() || false);
 
+  // Clipboard
+  ipcMain.handle('clipboard:readText', () => clipboard.readText());
+  ipcMain.handle('clipboard:writeText', (_, text: string) => clipboard.writeText(text));
+
   // Vault
   ipcMain.handle('vault:getStatus', () => vault.getStatus());
   ipcMain.handle('vault:unlock', (_, password: string) => vault.unlock(password));
+  ipcMain.handle('vault:setupMasterPassword', (_, password: string, recoveryKey: string) =>
+    vault.setupMasterPassword(password, recoveryKey)
+  );
+  ipcMain.handle('vault:recoverWithKey', (_, recoveryKey: string, newPassword: string) =>
+    vault.recoverWithKey(recoveryKey, newPassword)
+  );
   ipcMain.handle('vault:lock', () => vault.lock());
   ipcMain.handle('vault:getHosts', () => vault.getHosts());
   ipcMain.handle('vault:saveHost', (_, host) => vault.saveHost(host));

@@ -4,12 +4,13 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
-import { HostProfile, SFTPFile } from '../types';
+import { HostProfile, SFTPFile, ServerMetrics, RemoteProcess } from '../types';
 import { useTranslation } from '../i18n';
 import { 
   FolderTree, Activity, Search, X, Trash2, 
-  Folder, File, FileCode, FileArchive, FileText, CornerLeftUp, 
-  RotateCw, ChevronRight, ChevronLeft, Edit, Zap, PanelLeft, PanelRight, Terminal as TerminalIcon
+  Folder, FileText, FileCode, FileArchive, CornerLeftUp, 
+  RotateCw, ChevronRight, ChevronLeft, Edit, Zap, PanelLeft, PanelRight, 
+  Terminal as TerminalIcon, Clipboard, ArrowLeftRight, HardDrive, Cpu, Layers
 } from 'lucide-react';
 
 interface TerminalViewProps {
@@ -43,15 +44,83 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isConnected, setIsConnected] = useState(true);
 
-  // SmarTTY Features:
+  // Right-click context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  // Sidebars State (Opposite side enforcement)
   const [showSftpSidebar, setShowSftpSidebar] = useState(true);
-  const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
+  const [sftpPosition, setSftpPosition] = useState<'left' | 'right'>('right');
+
+  const [showMonitorSidebar, setShowMonitorSidebar] = useState(false);
+  const [monitorPosition, setMonitorPosition] = useState<'left' | 'right'>('left');
+
+  // Mini-Monitor Metrics State
+  const [metrics, setMetrics] = useState<ServerMetrics | null>(null);
+  const [processes, setProcesses] = useState<RemoteProcess[]>([]);
+
+  // SFTP Files State
   const [sftpPath, setSftpPath] = useState(host?.defaultPath || '/');
   const [sftpFiles, setSftpFiles] = useState<SFTPFile[]>([]);
   const [isSftpLoading, setIsSftpLoading] = useState(false);
   const [sftpFilter, setSftpFilter] = useState('');
 
-  // Load directory in sidebar
+  // Paste command from clipboard into terminal
+  const handlePasteFromClipboard = async () => {
+    try {
+      let text = '';
+      if (window.api?.clipboard) {
+        text = await window.api.clipboard.readText();
+      } else {
+        text = await navigator.clipboard.readText();
+      }
+      if (text) {
+        window.api?.ssh.write(sessionId, text);
+        xtermInstance.current?.focus();
+      }
+    } catch (err) {
+      console.error('Failed to paste clipboard text:', err);
+    }
+  };
+
+  // Enforce opposite sides when both sidebars are active
+  const toggleSftpPosition = () => {
+    const nextSftpPos = sftpPosition === 'left' ? 'right' : 'left';
+    setSftpPosition(nextSftpPos);
+    if (showMonitorSidebar) {
+      setMonitorPosition(nextSftpPos === 'right' ? 'left' : 'right');
+    }
+    setTimeout(() => fitAddonRef.current?.fit(), 100);
+  };
+
+  const toggleMonitorPosition = () => {
+    const nextMonPos = monitorPosition === 'left' ? 'right' : 'left';
+    setMonitorPosition(nextMonPos);
+    if (showSftpSidebar) {
+      setSftpPosition(nextMonPos === 'right' ? 'left' : 'right');
+    }
+    setTimeout(() => fitAddonRef.current?.fit(), 100);
+  };
+
+  const handleSwapPanels = () => {
+    const newSftpPos = sftpPosition === 'right' ? 'left' : 'right';
+    const newMonPos = monitorPosition === 'right' ? 'left' : 'right';
+    setSftpPosition(newSftpPos);
+    setMonitorPosition(newMonPos);
+    setTimeout(() => fitAddonRef.current?.fit(), 100);
+  };
+
+  // Toggle Mini-Monitor Sidebar
+  const handleToggleMonitorSidebar = () => {
+    const nextState = !showMonitorSidebar;
+    setShowMonitorSidebar(nextState);
+    if (nextState && showSftpSidebar) {
+      // Ensure they don't collide on the same side
+      setMonitorPosition(sftpPosition === 'right' ? 'left' : 'right');
+    }
+    setTimeout(() => fitAddonRef.current?.fit(), 100);
+  };
+
+  // Load directory in SFTP sidebar
   const loadSidebarDirectory = async (pathToGo: string) => {
     setIsSftpLoading(true);
     try {
@@ -72,6 +141,27 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       loadSidebarDirectory(sftpPath);
     }
   }, [showSftpSidebar, sessionId]);
+
+  // Mini-Monitor Telemetry Lifecycle
+  useEffect(() => {
+    if (!showMonitorSidebar) return;
+
+    window.api?.monitor.start(sessionId);
+
+    const unsubscribe = window.api?.monitor.onStats((payload) => {
+      if (payload.sessionId === sessionId) {
+        setMetrics(payload.metrics);
+        setProcesses(payload.processes);
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+      if (!showMonitorSidebar) {
+        window.api?.monitor.stop(sessionId);
+      }
+    };
+  }, [showMonitorSidebar, sessionId]);
 
   // Terminal Setup
   useEffect(() => {
@@ -161,6 +251,33 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
 
+    // Attach custom keyboard shortcut handler for Ctrl+C, Ctrl+V, Ctrl+Shift+V
+    term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      // Ctrl+C with active selection: copy to clipboard
+      if (event.ctrlKey && !event.shiftKey && !event.altKey && event.code === 'KeyC') {
+        if (term.hasSelection()) {
+          const selection = term.getSelection();
+          if (window.api?.clipboard) {
+            window.api.clipboard.writeText(selection);
+          } else {
+            navigator.clipboard.writeText(selection);
+          }
+          return false; // Prevent sending SIGINT
+        }
+        return true; // No selection: send SIGINT
+      }
+
+      // Ctrl+V or Ctrl+Shift+V: paste from clipboard
+      if ((event.ctrlKey && event.code === 'KeyV') || (event.ctrlKey && event.shiftKey && event.code === 'KeyV')) {
+        if (event.type === 'keydown') {
+          handlePasteFromClipboard();
+        }
+        return false;
+      }
+
+      return true;
+    });
+
     const onDataDispose = term.onData((data) => {
       window.api?.ssh.write(sessionId, data);
     });
@@ -228,7 +345,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     };
   }, [sessionId, isLight]);
 
-  // Handle Tab Visibility Changes: prevent terminal from shifting upwards!
+  // Handle Tab Visibility Changes: prevent terminal from shifting upwards
   useEffect(() => {
     if (isActive && xtermInstance.current && fitAddonRef.current) {
       setTimeout(() => {
@@ -277,6 +394,15 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     xtermInstance.current?.focus();
   };
 
+  const handleKillProcess = async (pid: number) => {
+    if (!confirm(t('monitor.killConfirm').replace('{pid}', String(pid)))) return;
+    try {
+      await window.api?.monitor.killProcess(sessionId, pid, 'SIGTERM');
+    } catch (err: any) {
+      alert(`Kill process failed: ${err.message}`);
+    }
+  };
+
   const formatSize = (bytes: number) => {
     if (bytes === 0) return '-';
     const units = ['B', 'K', 'M', 'G'];
@@ -305,10 +431,17 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     f.name.toLowerCase().includes(sftpFilter.toLowerCase())
   );
 
+  // Close context menu on click anywhere
+  useEffect(() => {
+    const handleWindowClick = () => setContextMenu(null);
+    window.addEventListener('click', handleWindowClick);
+    return () => window.removeEventListener('click', handleWindowClick);
+  }, []);
+
   // Render SFTP Sidebar Component
   const renderSftpSidebar = () => (
     <div className={`w-72 flex flex-col h-full select-none shadow-lg z-10 transition-all ${
-      sidebarPosition === 'right' ? 'border-l' : 'border-r'
+      sftpPosition === 'right' ? 'border-l' : 'border-r'
     } ${
       isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#1c1c1c] border-[#2c2c2c]'
     }`}>
@@ -322,16 +455,24 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
             <span>Remote Files</span>
           </span>
           <div className="flex items-center space-x-1">
+            {/* Swap Panels Button (when both are shown) */}
+            {showMonitorSidebar && (
+              <button
+                onClick={handleSwapPanels}
+                className="p-1 rounded hover:bg-white/10 text-amber-400 hover:text-amber-300"
+                title={t('terminal.swapPanels')}
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             {/* Position Switch (Left / Right) */}
             <button
-              onClick={() => {
-                setSidebarPosition(sidebarPosition === 'left' ? 'right' : 'left');
-                setTimeout(() => fitAddonRef.current?.fit(), 100);
-              }}
+              onClick={toggleSftpPosition}
               className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-              title={sidebarPosition === 'left' ? 'Dock to Right' : 'Dock to Left'}
+              title={sftpPosition === 'left' ? 'Dock to Right' : 'Dock to Left'}
             >
-              {sidebarPosition === 'left' ? <PanelRight className="w-3.5 h-3.5" /> : <PanelLeft className="w-3.5 h-3.5" />}
+              {sftpPosition === 'left' ? <PanelRight className="w-3.5 h-3.5" /> : <PanelLeft className="w-3.5 h-3.5" />}
             </button>
 
             <button
@@ -362,11 +503,21 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
           </div>
         </div>
 
-        {/* Path Breadcrumb Display */}
-        <div className={`px-2 py-0.5 rounded text-[10px] font-mono truncate border ${
-          isLight ? 'bg-white text-slate-700 border-slate-300' : 'bg-[#161616] text-slate-300 border-[#333]'
-        }`} title={sftpPath}>
-          {sftpPath}
+        {/* Path Breadcrumb Display + cd into terminal button */}
+        <div className="flex items-center space-x-1">
+          <div className={`flex-1 px-2 py-0.5 rounded text-[10px] font-mono truncate border ${
+            isLight ? 'bg-white text-slate-700 border-slate-300' : 'bg-[#161616] text-slate-300 border-[#333]'
+          }`} title={sftpPath}>
+            {sftpPath}
+          </div>
+          <button
+            onClick={() => handleOpenFolderInTerminal(sftpPath)}
+            className="px-1.5 py-0.5 rounded bg-sky-600/20 border border-sky-500/30 text-sky-400 hover:bg-sky-600/30 text-[10px] font-mono flex items-center space-x-0.5"
+            title={t('terminal.cdToTerminal')}
+          >
+            <TerminalIcon className="w-3 h-3" />
+            <span>cd</span>
+          </button>
         </div>
 
         {/* Quick Filter */}
@@ -404,7 +555,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
               </div>
 
               <div className="flex items-center space-x-1 text-[10px] text-slate-400 flex-shrink-0">
-                {/* Button to cd into directory in terminal! */}
                 {file.isDirectory && (
                   <button
                     onClick={(e) => {
@@ -439,6 +589,192 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     </div>
   );
 
+  // Render Mini-Monitor Sidebar Component
+  const renderMiniMonitorSidebar = () => (
+    <div className={`w-72 flex flex-col h-full select-none shadow-lg z-10 transition-all ${
+      monitorPosition === 'right' ? 'border-l' : 'border-r'
+    } ${
+      isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#1c1c1c] border-[#2c2c2c]'
+    }`}>
+      {/* Mini-Monitor Header */}
+      <div className={`p-2 border-b flex items-center justify-between ${
+        isLight ? 'bg-[#ececec] border-[#e0e0e0]' : 'bg-[#222222] border-[#2c2c2c]'
+      }`}>
+        <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider flex items-center space-x-1.5">
+          <Activity className="w-3.5 h-3.5" />
+          <span>Mini Monitor</span>
+        </span>
+        <div className="flex items-center space-x-1">
+          {/* Swap Panels Button (when both are shown) */}
+          {showSftpSidebar && (
+            <button
+              onClick={handleSwapPanels}
+              className="p-1 rounded hover:bg-white/10 text-amber-400 hover:text-amber-300"
+              title={t('terminal.swapPanels')}
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {/* Position Switch */}
+          <button
+            onClick={toggleMonitorPosition}
+            className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
+            title={monitorPosition === 'left' ? 'Dock to Right' : 'Dock to Left'}
+          >
+            {monitorPosition === 'left' ? <PanelRight className="w-3.5 h-3.5" /> : <PanelLeft className="w-3.5 h-3.5" />}
+          </button>
+
+          <button
+            onClick={() => {
+              setShowMonitorSidebar(false);
+              setTimeout(() => fitAddonRef.current?.fit(), 100);
+            }}
+            className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
+            title="Close Mini-Monitor"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Mini-Monitor Body */}
+      <div className="flex-1 overflow-y-auto p-2 space-y-3 text-xs">
+        {!metrics ? (
+          <div className="p-4 text-center text-slate-500 flex flex-col items-center space-y-2">
+            <Activity className="w-5 h-5 animate-pulse text-purple-400" />
+            <span className="text-[11px]">{t('monitor.gathering')}</span>
+          </div>
+        ) : (
+          <>
+            {/* CPU Gauge Card */}
+            <div className={`p-2 rounded-lg border ${
+              isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
+            }`}>
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="text-slate-400 flex items-center space-x-1">
+                  <Cpu className="w-3 h-3 text-sky-400" />
+                  <span>CPU Usage</span>
+                </span>
+                <span className="font-mono font-bold text-sky-400">
+                  {metrics.cpuUsage.toFixed(1)}%
+                </span>
+              </div>
+              {/* Progress bar */}
+              <div className="w-full h-1.5 bg-slate-700/30 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-500 rounded-full ${
+                    metrics.cpuUsage > 85
+                      ? 'bg-rose-500'
+                      : metrics.cpuUsage > 60
+                      ? 'bg-amber-500'
+                      : 'bg-sky-500'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(0, metrics.cpuUsage))}%` }}
+                />
+              </div>
+              <div className="mt-1 text-[10px] text-slate-500 font-mono">
+                Load: {metrics.loadAvg.join(' ')}
+              </div>
+            </div>
+
+            {/* RAM Memory Card */}
+            <div className={`p-2 rounded-lg border ${
+              isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
+            }`}>
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="text-slate-400 flex items-center space-x-1">
+                  <Layers className="w-3 h-3 text-emerald-400" />
+                  <span>RAM Memory</span>
+                </span>
+                <span className="font-mono font-bold text-emerald-400">
+                  {metrics.memoryPercent}%
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-700/30 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-500 rounded-full ${
+                    metrics.memoryPercent > 85
+                      ? 'bg-rose-500'
+                      : metrics.memoryPercent > 65
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(0, metrics.memoryPercent))}%` }}
+                />
+              </div>
+              <div className="mt-1 flex justify-between text-[10px] text-slate-500 font-mono">
+                <span>{(metrics.memoryUsed / 1024).toFixed(1)} GB used</span>
+                <span>{(metrics.memoryTotal / 1024).toFixed(1)} GB total</span>
+              </div>
+            </div>
+
+            {/* Disks */}
+            {metrics.disks && metrics.disks.length > 0 && (
+              <div className={`p-2 rounded-lg border ${
+                isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
+              }`}>
+                <div className="text-[11px] text-slate-400 flex items-center space-x-1 mb-1.5">
+                  <HardDrive className="w-3 h-3 text-amber-400" />
+                  <span>Disks</span>
+                </div>
+                <div className="space-y-1.5">
+                  {metrics.disks.slice(0, 3).map((d, i) => (
+                    <div key={i} className="text-[10px]">
+                      <div className="flex justify-between text-slate-400 font-mono">
+                        <span className="truncate max-w-[120px]">{d.mount}</span>
+                        <span className="font-semibold">{d.percent}%</span>
+                      </div>
+                      <div className="w-full h-1 bg-slate-700/30 rounded-full overflow-hidden mt-0.5">
+                        <div
+                          className="h-full bg-amber-500 rounded-full"
+                          style={{ width: `${Math.min(100, d.percent)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Top Running Processes */}
+            <div className={`p-2 rounded-lg border flex-1 ${
+              isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
+            }`}>
+              <div className="text-[11px] text-slate-400 flex items-center justify-between mb-1.5">
+                <span className="font-semibold">Top Processes</span>
+                <span className="text-[9px] text-slate-500">CPU / MEM</span>
+              </div>
+              <div className="divide-y divide-slate-700/20 font-mono text-[10px]">
+                {processes.slice(0, 5).map((proc) => (
+                  <div key={proc.pid} className="py-1 flex items-center justify-between group">
+                    <div className="truncate flex-1 mr-1">
+                      <div className="font-medium text-slate-300 truncate" title={proc.command}>
+                        {proc.command.split(' ')[0]}
+                      </div>
+                      <div className="text-slate-500 text-[9px]">PID: {proc.pid} ({proc.user})</div>
+                    </div>
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-sky-400 font-semibold">{proc.cpu.toFixed(0)}%</span>
+                      <span className="text-slate-400">{proc.mem.toFixed(0)}%</span>
+                      <button
+                        onClick={() => handleKillProcess(proc.pid)}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-rose-500/20 text-rose-400 rounded"
+                        title="SIGTERM process"
+                      >
+                        <Trash2 className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden relative ${
       isLight ? 'bg-[#fafafa] text-slate-800' : 'bg-[#181818] text-slate-100'
@@ -462,6 +798,16 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
 
         {/* Action buttons */}
         <div className="flex items-center space-x-1">
+          {/* Clipboard Paste Toolbar Button */}
+          <button
+            onClick={handlePasteFromClipboard}
+            className="flex items-center space-x-1 px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/20 text-[11px] font-medium transition-colors"
+            title={`${t('terminal.paste')} (Ctrl+V)`}
+          >
+            <Clipboard className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{t('terminal.paste')}</span>
+          </button>
+
           {/* Duplicate Session Magic Lightning Button (SmarTTY) */}
           <button
             onClick={onDuplicateSession}
@@ -472,7 +818,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
             <span className="hidden sm:inline">Duplicate</span>
           </button>
 
-          {/* SmarTTY Sidebar Toggle Button */}
+          {/* SmarTTY SFTP Sidebar Toggle Button */}
           <button
             onClick={() => {
               setShowSftpSidebar(!showSftpSidebar);
@@ -488,6 +834,31 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
             <FolderTree className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">{t('terminal.sftpFiles')}</span>
           </button>
+
+          {/* Mini-Monitor Sidebar Toggle Button */}
+          <button
+            onClick={handleToggleMonitorSidebar}
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              showMonitorSidebar
+                ? isLight ? 'bg-purple-100 text-purple-800 border border-purple-300' : 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                : isLight ? 'text-slate-600 hover:bg-slate-200' : 'text-slate-400 hover:bg-white/10'
+            }`}
+            title={t('terminal.toggleMiniMonitor')}
+          >
+            <Activity className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{t('terminal.miniMonitor')}</span>
+          </button>
+
+          {/* Swap Panels button if both sidebars are active */}
+          {showSftpSidebar && showMonitorSidebar && (
+            <button
+              onClick={handleSwapPanels}
+              className="p-1 rounded text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors"
+              title={t('terminal.swapPanels')}
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           <button
             onClick={() => setShowSearch(!showSearch)}
@@ -553,11 +924,83 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         </div>
       )}
 
-      {/* Main Split Layout: Sidebar Left or Right + Terminal Canvas */}
+      {/* Right-click Context Menu */}
+      {contextMenu && (
+        <div
+          className={`fixed z-50 border rounded-lg shadow-2xl py-1 text-xs select-none min-w-[170px] ${
+            isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-[#252525] border-[#3d3d3d] text-slate-200'
+          }`}
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              handlePasteFromClipboard();
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-sky-500/15 hover:text-sky-400 flex items-center justify-between"
+          >
+            <span>{t('terminal.contextPaste')}</span>
+            <span className="text-[10px] text-slate-500">Ctrl+V</span>
+          </button>
+          <button
+            onClick={() => {
+              if (xtermInstance.current?.hasSelection()) {
+                const sel = xtermInstance.current.getSelection();
+                if (window.api?.clipboard) {
+                  window.api.clipboard.writeText(sel);
+                } else {
+                  navigator.clipboard.writeText(sel);
+                }
+              }
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-sky-500/15 hover:text-sky-400 flex items-center justify-between"
+          >
+            <span>{t('terminal.contextCopy')}</span>
+            <span className="text-[10px] text-slate-500">Ctrl+C</span>
+          </button>
+          <div className="h-px bg-slate-500/20 my-1" />
+          <button
+            onClick={() => {
+              xtermInstance.current?.selectAll();
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-sky-500/15 hover:text-sky-400"
+          >
+            {t('terminal.contextSelectAll')}
+          </button>
+          <button
+            onClick={() => {
+              handleClear();
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-sky-500/15 hover:text-sky-400"
+          >
+            {t('terminal.contextClear')}
+          </button>
+        </div>
+      )}
+
+      {/* Main Split Layout: Left Panel + Center Terminal + Right Panel */}
       <div className="flex-1 flex overflow-hidden">
-        {showSftpSidebar && sidebarPosition === 'left' && renderSftpSidebar()}
-        <div ref={terminalRef} className="flex-1 h-full p-1 overflow-hidden" />
-        {showSftpSidebar && sidebarPosition === 'right' && renderSftpSidebar()}
+        {/* Left Side Slot */}
+        {showSftpSidebar && sftpPosition === 'left' && renderSftpSidebar()}
+        {showMonitorSidebar && monitorPosition === 'left' && renderMiniMonitorSidebar()}
+
+        {/* Center Terminal Canvas */}
+        <div
+          ref={terminalRef}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setContextMenu({ x: e.clientX, y: e.clientY });
+          }}
+          className="flex-1 h-full p-1 overflow-hidden"
+        />
+
+        {/* Right Side Slot */}
+        {showSftpSidebar && sftpPosition === 'right' && renderSftpSidebar()}
+        {showMonitorSidebar && monitorPosition === 'right' && renderMiniMonitorSidebar()}
       </div>
     </div>
   );

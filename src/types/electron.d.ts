@@ -6,6 +6,8 @@ declare global {
       vault: {
         getStatus: () => Promise<VaultStatus>;
         unlock: (password: string) => Promise<boolean>;
+        setupMasterPassword: (password: string, recoveryKey: string) => Promise<{ success: boolean; error?: string }>;
+        recoverWithKey: (recoveryKey: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
         lock: () => Promise<void>;
         getHosts: () => Promise<HostProfile[]>;
         saveHost: (host: HostProfile) => Promise<void>;
@@ -59,6 +61,10 @@ declare global {
       };
       dialog: {
         openKeyFile: () => Promise<string | null>;
+      };
+      clipboard: {
+        readText: () => Promise<string>;
+        writeText: (text: string) => Promise<void>;
       };
       updater: {
         getStatus: () => Promise<UpdateState>;

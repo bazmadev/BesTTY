@@ -6,10 +6,44 @@ import { HostProfile, Snippet, TunnelConfig, BesTTYSettings } from '../../src/ty
 
 interface VaultData {
   version: number;
+  isMasterPasswordSet?: boolean;
   hosts: HostProfile[];
   snippets: Snippet[];
   tunnels: TunnelConfig[];
   settings: BesTTYSettings;
+}
+
+interface WrappedKey {
+  salt: string; // hex
+  iv: string;   // hex
+  tag: string;  // hex
+  ciphertext: string; // hex
+}
+
+interface VaultEnvelope {
+  format: 'bestty-v2';
+  isMasterPasswordSet: boolean;
+  passwordSalt?: string;
+  passwordWrappedDek?: {
+    iv: string;
+    tag: string;
+    ciphertext: string;
+  };
+  recoverySalt?: string;
+  recoveryKeyHash?: string;
+  recoveryWrappedDek?: {
+    iv: string;
+    tag: string;
+    ciphertext: string;
+  };
+  unprotectedWrappedDek?: {
+    iv: string;
+    tag: string;
+    ciphertext: string;
+  };
+  payloadIv: string;
+  payloadTag: string;
+  payloadCiphertext: string;
 }
 
 const DEFAULT_SETTINGS: BesTTYSettings = {
@@ -34,99 +68,405 @@ const DEFAULT_SNIPPETS: Snippet[] = [
   { id: '6', name: 'Live Logs (Syslog)', command: 'journalctl -f -n 100', category: 'Logs', description: 'Follow systemd journal logs' },
 ];
 
+function normalizeRecoveryKey(input: string): string {
+  const trimmed = input.trim();
+  if (trimmed.includes(' ')) {
+    return trimmed.toLowerCase().replace(/\s+/g, ' ');
+  }
+  return trimmed.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
 export class VaultManager {
   private vaultPath: string;
-  private isUnlocked: boolean = false;
-  private currentKey: Buffer | null = null;
+  private isMasterPasswordSet: boolean = false;
+  private isUnlocked: boolean = true;
+  private dek: Buffer | null = null;
+  private envelope: VaultEnvelope | null = null;
   private memoryData: VaultData;
 
   constructor() {
     const userDataPath = app.getPath('userData');
     this.vaultPath = path.join(userDataPath, 'bestty-vault.enc');
     this.memoryData = {
-      version: 1,
+      version: 2,
+      isMasterPasswordSet: false,
       hosts: [],
       snippets: DEFAULT_SNIPPETS,
       tunnels: [],
       settings: DEFAULT_SETTINGS,
     };
+
+    this.initFromDisk();
+  }
+
+  private deriveKey(passwordOrSecret: string, salt: Buffer): Buffer {
+    // PBKDF2 with 100,000 iterations for strong brute force resistance
+    return crypto.pbkdf2Sync(passwordOrSecret, salt, 100000, 32, 'sha512');
+  }
+
+  private getDefaultKey(): Buffer {
+    return crypto.createHash('sha256').update('bestty-default-passphrase').digest();
+  }
+
+  private initFromDisk(): void {
+    if (!fs.existsSync(this.vaultPath)) {
+      this.isMasterPasswordSet = false;
+      this.isUnlocked = true;
+      this.dek = crypto.randomBytes(32);
+      return;
+    }
+
+    try {
+      const raw = fs.readFileSync(this.vaultPath);
+      // Check if file starts with '{' (v2 format)
+      if (raw.length > 0 && raw[0] === 0x7B) {
+        const env = JSON.parse(raw.toString('utf8')) as VaultEnvelope;
+        this.envelope = env;
+        this.isMasterPasswordSet = env.isMasterPasswordSet;
+
+        if (!env.isMasterPasswordSet && env.unprotectedWrappedDek) {
+          // Unprotected vault: automatically unlock using fallback key
+          const defaultKey = this.getDefaultKey();
+          const decipher = crypto.createDecipheriv(
+            'aes-256-gcm',
+            defaultKey,
+            Buffer.from(env.unprotectedWrappedDek.iv, 'hex')
+          );
+          decipher.setAuthTag(Buffer.from(env.unprotectedWrappedDek.tag, 'hex'));
+          const dek = Buffer.concat([
+            decipher.update(Buffer.from(env.unprotectedWrappedDek.ciphertext, 'hex')),
+            decipher.final(),
+          ]);
+
+          this.dek = dek;
+          // Decrypt payload
+          const payloadDecipher = crypto.createDecipheriv(
+            'aes-256-gcm',
+            dek,
+            Buffer.from(env.payloadIv, 'hex')
+          );
+          payloadDecipher.setAuthTag(Buffer.from(env.payloadTag, 'hex'));
+          let decrypted = payloadDecipher.update(Buffer.from(env.payloadCiphertext, 'hex'), undefined, 'utf8');
+          decrypted += payloadDecipher.final('utf8');
+
+          this.memoryData = JSON.parse(decrypted);
+          this.isUnlocked = true;
+        } else {
+          // Master password is configured: vault stays locked until unlock() is called
+          this.isUnlocked = false;
+        }
+      } else {
+        // v1 legacy binary format: [16b Salt][12b IV][16b AuthTag][Ciphertext...]
+        // Attempt decrypting with fallback key
+        try {
+          const salt = raw.subarray(0, 16);
+          const iv = raw.subarray(16, 28);
+          const tag = raw.subarray(28, 44);
+          const ciphertext = raw.subarray(44);
+
+          const defaultKey = this.getDefaultKey();
+          const decipher = crypto.createDecipheriv('aes-256-gcm', defaultKey, iv);
+          decipher.setAuthTag(tag);
+          let decrypted = decipher.update(ciphertext, undefined, 'utf8');
+          decrypted += decipher.final('utf8');
+
+          const data = JSON.parse(decrypted);
+          this.memoryData = {
+            version: 2,
+            isMasterPasswordSet: false,
+            hosts: data.hosts || [],
+            snippets: data.snippets || DEFAULT_SNIPPETS,
+            tunnels: data.tunnels || [],
+            settings: data.settings || DEFAULT_SETTINGS,
+          };
+          this.isMasterPasswordSet = false;
+          this.isUnlocked = true;
+          this.dek = crypto.randomBytes(32);
+          // Upgrade to v2 format
+          this.save();
+        } catch {
+          // Fallback failed, meaning it was locked with an actual user password in v1
+          this.isMasterPasswordSet = true;
+          this.isUnlocked = false;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to init vault from disk:', err);
+      this.isMasterPasswordSet = false;
+      this.isUnlocked = true;
+      this.dek = crypto.randomBytes(32);
+    }
   }
 
   public isVaultConfigured(): boolean {
-    return fs.existsSync(this.vaultPath);
+    return this.isMasterPasswordSet;
   }
 
   public getStatus() {
     return {
       isConfigured: this.isVaultConfigured(),
-      isUnlocked: this.isUnlocked || !this.isVaultConfigured(),
+      isUnlocked: this.isUnlocked,
     };
   }
 
-  private deriveKey(password: string, salt: Buffer): Buffer {
-    // PBKDF2 with 100,000 iterations for strong protection against brute force
-    return crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
+  public setupMasterPassword(password: string, recoveryKey: string): { success: boolean; error?: string } {
+    try {
+      if (!password || password.length < 1) {
+        return { success: false, error: 'Password cannot be empty' };
+      }
+      if (!recoveryKey || recoveryKey.length < 4) {
+        return { success: false, error: 'Recovery key cannot be empty' };
+      }
+
+      const normalizedRecovery = normalizeRecoveryKey(recoveryKey);
+      if (!this.dek) {
+        this.dek = crypto.randomBytes(32);
+      }
+
+      // Derive Password KEK
+      const passwordSalt = crypto.randomBytes(16);
+      const passwordKek = this.deriveKey(password, passwordSalt);
+
+      // Wrap DEK with passwordKek
+      const pwdIv = crypto.randomBytes(12);
+      const pwdCipher = crypto.createCipheriv('aes-256-gcm', passwordKek, pwdIv);
+      const pwdCiphertext = Buffer.concat([pwdCipher.update(this.dek), pwdCipher.final()]);
+      const pwdTag = pwdCipher.getAuthTag();
+
+      // Derive Recovery Key KEK
+      const recoverySalt = crypto.randomBytes(16);
+      const recoveryKek = this.deriveKey(normalizedRecovery, recoverySalt);
+      const recoveryKeyHash = crypto.createHash('sha256').update(normalizedRecovery).digest('hex');
+
+      // Wrap DEK with recoveryKek
+      const recIv = crypto.randomBytes(12);
+      const recCipher = crypto.createCipheriv('aes-256-gcm', recoveryKek, recIv);
+      const recCiphertext = Buffer.concat([recCipher.update(this.dek), recCipher.final()]);
+      const recTag = recCipher.getAuthTag();
+
+      // Encrypt Memory Data with DEK
+      const payloadIv = crypto.randomBytes(12);
+      const payloadCipher = crypto.createCipheriv('aes-256-gcm', this.dek, payloadIv);
+      const dataStr = JSON.stringify(this.memoryData);
+      const payloadCiphertext = Buffer.concat([payloadCipher.update(dataStr, 'utf8'), payloadCipher.final()]);
+      const payloadTag = payloadCipher.getAuthTag();
+
+      const newEnvelope: VaultEnvelope = {
+        format: 'bestty-v2',
+        isMasterPasswordSet: true,
+        passwordSalt: passwordSalt.toString('hex'),
+        passwordWrappedDek: {
+          iv: pwdIv.toString('hex'),
+          tag: pwdTag.toString('hex'),
+          ciphertext: pwdCiphertext.toString('hex'),
+        },
+        recoverySalt: recoverySalt.toString('hex'),
+        recoveryKeyHash,
+        recoveryWrappedDek: {
+          iv: recIv.toString('hex'),
+          tag: recTag.toString('hex'),
+          ciphertext: recCiphertext.toString('hex'),
+        },
+        payloadIv: payloadIv.toString('hex'),
+        payloadTag: payloadTag.toString('hex'),
+        payloadCiphertext: payloadCiphertext.toString('hex'),
+      };
+
+      this.envelope = newEnvelope;
+      this.isMasterPasswordSet = true;
+      this.isUnlocked = true;
+      fs.writeFileSync(this.vaultPath, JSON.stringify(newEnvelope, null, 2), 'utf8');
+      return { success: true };
+    } catch (err: any) {
+      console.error('Failed to setup master password:', err);
+      return { success: false, error: err.message || 'Failed to setup master password' };
+    }
+  }
+
+  public recoverWithKey(recoveryKey: string, newPassword: string): { success: boolean; error?: string } {
+    try {
+      if (!fs.existsSync(this.vaultPath)) {
+        return { success: false, error: 'Vault file not found' };
+      }
+
+      const raw = fs.readFileSync(this.vaultPath);
+      let env: VaultEnvelope;
+      try {
+        env = JSON.parse(raw.toString('utf8')) as VaultEnvelope;
+      } catch {
+        return { success: false, error: 'Legacy vault format does not support key recovery' };
+      }
+
+      if (!env.recoveryWrappedDek || !env.recoverySalt || !env.recoveryKeyHash) {
+        return { success: false, error: 'No recovery key registered for this vault' };
+      }
+
+      const normalizedRecovery = normalizeRecoveryKey(recoveryKey);
+      const hash = crypto.createHash('sha256').update(normalizedRecovery).digest('hex');
+
+      if (hash !== env.recoveryKeyHash) {
+        return { success: false, error: 'Invalid recovery phrase or key' };
+      }
+
+      // Derive recovery KEK
+      const recoveryKek = this.deriveKey(normalizedRecovery, Buffer.from(env.recoverySalt, 'hex'));
+      const decipher = crypto.createDecipheriv(
+        'aes-256-gcm',
+        recoveryKek,
+        Buffer.from(env.recoveryWrappedDek.iv, 'hex')
+      );
+      decipher.setAuthTag(Buffer.from(env.recoveryWrappedDek.tag, 'hex'));
+      const dek = Buffer.concat([
+        decipher.update(Buffer.from(env.recoveryWrappedDek.ciphertext, 'hex')),
+        decipher.final(),
+      ]);
+
+      // Verify payload decryption with unwrapped DEK
+      const payloadDecipher = crypto.createDecipheriv(
+        'aes-256-gcm',
+        dek,
+        Buffer.from(env.payloadIv, 'hex')
+      );
+      payloadDecipher.setAuthTag(Buffer.from(env.payloadTag, 'hex'));
+      let decrypted = payloadDecipher.update(Buffer.from(env.payloadCiphertext, 'hex'), undefined, 'utf8');
+      decrypted += payloadDecipher.final('utf8');
+
+      this.memoryData = JSON.parse(decrypted);
+      this.dek = dek;
+      this.isUnlocked = true;
+
+      // Re-setup with the new password and preserve recovery key
+      return this.setupMasterPassword(newPassword, recoveryKey);
+    } catch (err: any) {
+      console.error('Failed to recover vault with key:', err);
+      return { success: false, error: err.message || 'Recovery failed' };
+    }
   }
 
   public unlock(password: string): boolean {
-    if (!this.isVaultConfigured()) {
-      // First-time setup: initialize with this password
-      const salt = crypto.randomBytes(16);
-      this.currentKey = this.deriveKey(password, salt);
-      this.isUnlocked = true;
-      this.save(salt);
-      return true;
+    if (!fs.existsSync(this.vaultPath)) {
+      // First-time setup: initialize with default recovery key
+      const result = this.setupMasterPassword(password, 'BEST-DEFAULT-RECOVERY-KEY');
+      return result.success;
     }
 
     try {
-      const encryptedFile = fs.readFileSync(this.vaultPath);
-      // File format: [16 bytes Salt][12 bytes IV][16 bytes Auth Tag][Ciphertext...]
-      const salt = encryptedFile.subarray(0, 16);
-      const iv = encryptedFile.subarray(16, 28);
-      const tag = encryptedFile.subarray(28, 44);
-      const ciphertext = encryptedFile.subarray(44);
+      const raw = fs.readFileSync(this.vaultPath);
+      if (raw.length > 0 && raw[0] === 0x7B) {
+        // v2 envelope
+        const env = JSON.parse(raw.toString('utf8')) as VaultEnvelope;
+        if (!env.isMasterPasswordSet) {
+          this.isUnlocked = true;
+          return true;
+        }
 
-      const key = this.deriveKey(password, salt);
-      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-      decipher.setAuthTag(tag);
+        if (!env.passwordSalt || !env.passwordWrappedDek) {
+          return false;
+        }
 
-      let decrypted = decipher.update(ciphertext, undefined, 'utf8');
-      decrypted += decipher.final('utf8');
+        const passwordSalt = Buffer.from(env.passwordSalt, 'hex');
+        const passwordKek = this.deriveKey(password, passwordSalt);
 
-      this.memoryData = JSON.parse(decrypted);
-      this.currentKey = key;
-      this.isUnlocked = true;
-      return true;
+        const decipher = crypto.createDecipheriv(
+          'aes-256-gcm',
+          passwordKek,
+          Buffer.from(env.passwordWrappedDek.iv, 'hex')
+        );
+        decipher.setAuthTag(Buffer.from(env.passwordWrappedDek.tag, 'hex'));
+        const dek = Buffer.concat([
+          decipher.update(Buffer.from(env.passwordWrappedDek.ciphertext, 'hex')),
+          decipher.final(),
+        ]);
+
+        const payloadDecipher = crypto.createDecipheriv(
+          'aes-256-gcm',
+          dek,
+          Buffer.from(env.payloadIv, 'hex')
+        );
+        payloadDecipher.setAuthTag(Buffer.from(env.payloadTag, 'hex'));
+        let decrypted = payloadDecipher.update(Buffer.from(env.payloadCiphertext, 'hex'), undefined, 'utf8');
+        decrypted += payloadDecipher.final('utf8');
+
+        this.memoryData = JSON.parse(decrypted);
+        this.dek = dek;
+        this.envelope = env;
+        this.isUnlocked = true;
+        return true;
+      } else {
+        // Legacy v1 binary format
+        const salt = raw.subarray(0, 16);
+        const iv = raw.subarray(16, 28);
+        const tag = raw.subarray(28, 44);
+        const ciphertext = raw.subarray(44);
+
+        const key = this.deriveKey(password, salt);
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(tag);
+
+        let decrypted = decipher.update(ciphertext, undefined, 'utf8');
+        decrypted += decipher.final('utf8');
+
+        this.memoryData = JSON.parse(decrypted);
+        this.isMasterPasswordSet = true;
+        this.isUnlocked = true;
+        this.dek = crypto.randomBytes(32);
+        // Upgrade to v2 format
+        this.setupMasterPassword(password, 'BEST-UPGRADED-VAULT-RECOVERY');
+        return true;
+      }
     } catch (err) {
       console.error('Failed to unlock vault:', err);
       return false;
     }
   }
 
-  public save(customSalt?: Buffer): boolean {
+  public save(): boolean {
     try {
-      const dataStr = JSON.stringify(this.memoryData);
-      
-      let salt: Buffer;
-      let key: Buffer;
-
-      if (this.currentKey) {
-        salt = customSalt || crypto.randomBytes(16);
-        key = this.currentKey;
-      } else {
-        // Unprotected fallback (e.g. quick mode without master password)
-        salt = Buffer.alloc(16);
-        key = crypto.createHash('sha256').update('bestty-default-passphrase').digest();
+      if (!this.dek) {
+        this.dek = crypto.randomBytes(32);
       }
 
-      const iv = crypto.randomBytes(12);
-      const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-      let ciphertext = cipher.update(dataStr, 'utf8');
-      ciphertext = Buffer.concat([ciphertext, cipher.final()]);
-      const tag = cipher.getAuthTag();
+      const dataStr = JSON.stringify(this.memoryData);
+      const payloadIv = crypto.randomBytes(12);
+      const payloadCipher = crypto.createCipheriv('aes-256-gcm', this.dek, payloadIv);
+      const payloadCiphertext = Buffer.concat([payloadCipher.update(dataStr, 'utf8'), payloadCipher.final()]);
+      const payloadTag = payloadCipher.getAuthTag();
 
-      const combined = Buffer.concat([salt, iv, tag, ciphertext]);
-      fs.writeFileSync(this.vaultPath, combined);
+      if (this.isMasterPasswordSet && this.envelope) {
+        // Vault has master password: keep existing wrapped DEKs, update payload
+        const updatedEnvelope: VaultEnvelope = {
+          ...this.envelope,
+          payloadIv: payloadIv.toString('hex'),
+          payloadTag: payloadTag.toString('hex'),
+          payloadCiphertext: payloadCiphertext.toString('hex'),
+        };
+        this.envelope = updatedEnvelope;
+        fs.writeFileSync(this.vaultPath, JSON.stringify(updatedEnvelope, null, 2), 'utf8');
+        return true;
+      }
+
+      // Unprotected mode (no master password set yet)
+      const defaultKey = this.getDefaultKey();
+      const unprotIv = crypto.randomBytes(12);
+      const unprotCipher = crypto.createCipheriv('aes-256-gcm', defaultKey, unprotIv);
+      const unprotCiphertext = Buffer.concat([unprotCipher.update(this.dek), unprotCipher.final()]);
+      const unprotTag = unprotCipher.getAuthTag();
+
+      const newEnvelope: VaultEnvelope = {
+        format: 'bestty-v2',
+        isMasterPasswordSet: false,
+        unprotectedWrappedDek: {
+          iv: unprotIv.toString('hex'),
+          tag: unprotTag.toString('hex'),
+          ciphertext: unprotCiphertext.toString('hex'),
+        },
+        payloadIv: payloadIv.toString('hex'),
+        payloadTag: payloadTag.toString('hex'),
+        payloadCiphertext: payloadCiphertext.toString('hex'),
+      };
+
+      this.envelope = newEnvelope;
+      fs.writeFileSync(this.vaultPath, JSON.stringify(newEnvelope, null, 2), 'utf8');
       return true;
     } catch (err) {
       console.error('Failed to save vault:', err);
@@ -135,8 +475,10 @@ export class VaultManager {
   }
 
   public lock(): void {
-    this.isUnlocked = false;
-    this.currentKey = null;
+    if (this.isMasterPasswordSet) {
+      this.isUnlocked = false;
+      this.dek = null;
+    }
   }
 
   // Hosts
