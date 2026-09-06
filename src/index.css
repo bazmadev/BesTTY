@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --fluent-bg: #181818;
+    --fluent-card: #202020;
+    --fluent-subtle: #272727;
+    --fluent-hover: #2e2e2e;
+    --fluent-active: #383838;
+    --fluent-border: #333333;
+    --fluent-primary: #0078d4;
+    --fluent-accent: #60cdff;
+  }
+
+  body {
+    user-select: none;
+    -webkit-user-select: none;
+    font-family: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+    background-color: var(--fluent-bg);
+    color: #ffffff;
+    overflow: hidden;
+  }
+
+  /* Custom Windows 11 Fluent Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+}
+
+/* Electron Window Drag Regions */
+.titlebar-drag-region {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Glassmorphism & Fluent Acrylic */
+.fluent-acrylic {
+  background: rgba(30, 30, 30, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.fluent-card {
+  background-color: #202020;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.fluent-input {
+  background-color: #272727;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  transition: all 0.15s ease-in-out;
+}
+
+.fluent-input:focus {
+  outline: none;
+  background-color: #202020;
+  border-bottom-color: #60cdff;
+}
+
+/* xterm container adjustments */
+.xterm-viewport {
+  background-color: transparent !important;
+}
+
+.xterm {
+  padding: 8px;
+  height: 100%;
+}
