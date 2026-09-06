@@ -30,6 +30,12 @@ const MainApp: React.FC = () => {
 
   // About Modal State
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
+  const [aboutModalTab, setAboutModalTab] = useState<'mission' | 'updates' | 'donate'>('mission');
+
+  const handleOpenAbout = (tab: 'mission' | 'updates' | 'donate' = 'mission') => {
+    setAboutModalTab(tab);
+    setIsAboutModalOpen(true);
+  };
 
   // Vault & Data State
   const [vaultStatus, setVaultStatus] = useState<VaultStatus>({ isConfigured: false, isUnlocked: true });
@@ -227,7 +233,7 @@ const MainApp: React.FC = () => {
     setPendingPromptHost(null);
   };
 
-  // SmarTTY Duplicate Tab Feature (⚡ Lightning button)
+  // Duplicate Tab Feature (⚡ Lightning button)
   const handleDuplicateSession = (targetSessionId?: string) => {
     const activeTab = tabs.find((t) => t.id === activeTabId);
     const sid = targetSessionId || activeTab?.sessionId;
@@ -404,7 +410,7 @@ const MainApp: React.FC = () => {
         onDuplicateTab={() => handleDuplicateSession()}
         onOpenHelp={() => setIsHelpModalOpen(true)}
         onOpenSettings={() => setCurrentView('settings')}
-        onOpenAbout={() => setIsAboutModalOpen(true)}
+        onOpenAbout={(tab) => handleOpenAbout(tab || 'updates')}
       />
 
       {/* Main App Workspace */}
@@ -424,6 +430,7 @@ const MainApp: React.FC = () => {
           }}
           vaultStatus={vaultStatus}
           onToggleVault={handleToggleVault}
+          onOpenAbout={() => handleOpenAbout('mission')}
           connectedSessionCount={activeSessions.size}
         />
 
@@ -626,7 +633,7 @@ const MainApp: React.FC = () => {
                 setSettings(await window.api.vault.getSettings());
               }}
               onSetupVault={() => setIsVaultModalOpen(true)}
-              onOpenAbout={() => setIsAboutModalOpen(true)}
+              onOpenAbout={(tab) => handleOpenAbout(tab)}
             />
           )}
         </div>
@@ -694,7 +701,7 @@ const MainApp: React.FC = () => {
           <span className="text-slate-500">UTF-8</span>
           <span className="text-slate-500">xterm-256color</span>
           <div
-            onClick={() => setIsAboutModalOpen(true)}
+            onClick={() => handleOpenAbout('mission')}
             className="flex items-center space-x-1.5 cursor-pointer hover:opacity-80 transition-opacity"
             title={t('about.title')}
           >
@@ -745,6 +752,7 @@ const MainApp: React.FC = () => {
       <AboutModal
         isOpen={isAboutModalOpen}
         isLight={isLight}
+        initialTab={aboutModalTab}
         onClose={() => setIsAboutModalOpen(false)}
       />
     </div>

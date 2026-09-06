@@ -1,5 +1,5 @@
 import React from 'react';
-import { Server, FolderTree, Code, Activity, Network, Terminal, Settings, Lock, Unlock } from 'lucide-react';
+import { Server, FolderTree, Code, Activity, Network, Terminal, Settings, Lock, Unlock, Info } from 'lucide-react';
 import { TabType, VaultStatus } from '../types';
 import { useTranslation } from '../i18n';
 
@@ -9,6 +9,7 @@ interface SidebarProps {
   onSelectView: (view: 'hosts' | TabType) => void;
   vaultStatus: VaultStatus;
   onToggleVault: () => void;
+  onOpenAbout?: () => void;
   connectedSessionCount: number;
 }
 
@@ -18,6 +19,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectView,
   vaultStatus,
   onToggleVault,
+  onOpenAbout,
   connectedSessionCount,
 }) => {
   const { t } = useTranslation();
@@ -80,8 +82,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </div>
 
-      {/* Vault Status Indicator & Lock Button */}
-      <div className="flex flex-col items-center w-full">
+      {/* Bottom Area: Vault Status & About */}
+      <div className="flex flex-col items-center space-y-2 w-full">
+        {/* Vault Status Indicator & Lock Button */}
         <button
           onClick={onToggleVault}
           className={`group relative w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
@@ -103,6 +106,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {vaultStatus.isUnlocked ? t('nav.vaultUnlocked') : t('nav.vaultLocked')}
           </span>
         </button>
+
+        {/* About BesTTY Button */}
+        {onOpenAbout && (
+          <button
+            onClick={onOpenAbout}
+            className={`group relative w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+              isLight
+                ? 'text-slate-500 hover:text-sky-600 hover:bg-slate-300/60'
+                : 'text-slate-400 hover:text-sky-400 hover:bg-[#262626]'
+            }`}
+            title={t('about.title')}
+          >
+            <Info className="w-5 h-5" />
+
+            <span className={`absolute left-14 text-xs px-2.5 py-1.5 rounded-md shadow-xl border whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 ${
+              isLight ? 'bg-white text-slate-800 border-slate-200 shadow-md' : 'bg-[#2b2b2b] text-slate-100 border-white/10'
+            }`}>
+              {t('about.title')}
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );

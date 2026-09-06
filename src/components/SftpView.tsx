@@ -53,7 +53,7 @@ export const SftpView: React.FC<SftpViewProps> = ({
   useEffect(() => {
     loadDirectory(currentPath);
 
-    // SmarTTY Killer Feature: Listen to OSC 7 directory changes from terminal
+    // Listen to OSC 7 directory changes from terminal
     const unsubscribe = window.api?.ssh.onDirectoryChanged((payload) => {
       if (payload.sessionId === sessionId && payload.directory) {
         loadDirectory(payload.directory);

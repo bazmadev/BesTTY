@@ -808,17 +808,17 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
             <span className="hidden sm:inline">{t('terminal.paste')}</span>
           </button>
 
-          {/* Duplicate Session Magic Lightning Button (SmarTTY) */}
+          {/* Duplicate Session Magic Lightning Button */}
           <button
             onClick={onDuplicateSession}
             className="flex items-center space-x-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 text-[11px] font-semibold transition-all shadow-sm"
-            title="Duplicate Tab: Open a new parallel terminal to this server"
+            title={t('titlebar.duplicateTab')}
           >
             <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-            <span className="hidden sm:inline">Duplicate</span>
+            <span className="hidden sm:inline">{t('titlebar.duplicateTabShort')}</span>
           </button>
 
-          {/* SmarTTY SFTP Sidebar Toggle Button */}
+          {/* SFTP Sidebar Toggle Button */}
           <button
             onClick={() => {
               setShowSftpSidebar(!showSftpSidebar);

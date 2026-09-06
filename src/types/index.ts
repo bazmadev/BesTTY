@@ -110,7 +110,7 @@ export interface BesTTYSettings {
   cursorBlink: boolean;
   scrollback: number;
   confirmOnClose: boolean;
-  sftpFollowTerminal: boolean; // SmarTTY OSC 7 directory tracking
+  sftpFollowTerminal: boolean; // OSC 7 directory tracking
   enableHardwareAcceleration: boolean;
 }
 

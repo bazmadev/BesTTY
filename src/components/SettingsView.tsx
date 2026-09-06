@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { BesTTYSettings, UpdateState } from '../types';
+import { BesTTYSettings } from '../types';
 import { useTranslation, SupportedLocale } from '../i18n';
-import { Settings, Shield, Terminal, Palette, FolderTree, Check, Save, Languages, Sun, Moon, Download, RefreshCw, Loader2, Sparkles, AlertCircle, Heart } from 'lucide-react';
+import { Settings, Shield, Terminal, Palette, FolderTree, Check, Save, Languages, Sun, Moon, Sparkles, Heart, Download } from 'lucide-react';
 
 interface SettingsViewProps {
   settings: BesTTYSettings;
   isLight?: boolean;
   onSaveSettings: (settings: Partial<BesTTYSettings>) => void;
   onSetupVault: () => void;
-  onOpenAbout?: () => void;
+  onOpenAbout?: (tab?: 'mission' | 'updates' | 'donate') => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -22,41 +22,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [localSettings, setLocalSettings] = useState<BesTTYSettings>(settings);
   const [saved, setSaved] = useState(false);
 
-  const [updateState, setUpdateState] = useState<UpdateState>({
-    status: 'idle',
-    currentVersion: '1.0.0',
-  });
-
   useEffect(() => {
     setLocalSettings(settings);
   }, [settings]);
-
-  useEffect(() => {
-    if (!window.api?.updater) return;
-    window.api.updater.getStatus().then(setUpdateState);
-    const unsubscribe = window.api.updater.onStatus((st) => setUpdateState(st));
-    return () => unsubscribe();
-  }, []);
-
-  const handleCheckUpdate = async () => {
-    if (!window.api?.updater) return;
-    try {
-      const res = await window.api.updater.check();
-      setUpdateState(res);
-    } catch (e: any) {
-      setUpdateState((prev) => ({ ...prev, status: 'error', error: e.message }));
-    }
-  };
-
-  const handleDownloadUpdate = async () => {
-    if (!window.api?.updater) return;
-    await window.api.updater.download();
-  };
-
-  const handleInstallUpdate = () => {
-    if (!window.api?.updater) return;
-    window.api.updater.install();
-  };
 
   const handleLanguageChange = (newLocale: SupportedLocale) => {
     setLocale(newLocale);
@@ -189,13 +157,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        {/* SmarTTY Signature Features */}
+        {/* Smart Shell Integration */}
         <div className={`border rounded-xl p-5 space-y-4 shadow-sm ${
           isLight ? 'bg-white border-slate-200' : 'bg-[#202020] border-[#303030]'
         }`}>
           <h3 className="text-sm font-semibold flex items-center space-x-2">
             <FolderTree className="w-4 h-4 text-amber-500" />
-            <span>{t('settings.smarttyFeatures')}</span>
+            <span>{t('settings.smartFeatures')}</span>
           </h3>
 
           <div className="flex items-center justify-between">
@@ -349,127 +317,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
         </div>
 
-        {/* OTA Updates Section */}
-        <div className={`border rounded-xl p-5 space-y-4 shadow-sm ${
-          isLight ? 'bg-white border-slate-200' : 'bg-[#202020] border-[#303030]'
-        }`}>
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold flex items-center space-x-2">
-              <Download className="w-4 h-4 text-sky-500" />
-              <span>{t('updater.title')}</span>
-            </h3>
-            <span className="text-xs font-mono px-2.5 py-1 rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/20 font-medium">
-              v{updateState.currentVersion}
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-400">
-            {t('updater.desc')}
-          </p>
-
-          {/* Status feedback block */}
-          {updateState.status === 'not-available' && (
-            <div className={`p-3 rounded-lg border text-xs flex items-center gap-2 ${
-              isLight ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-emerald-950/30 border-emerald-500/20 text-emerald-400'
-            }`}>
-              <Check className="w-4 h-4 text-emerald-500" />
-              <span>{t('updater.upToDate')}</span>
-            </div>
-          )}
-
-          {updateState.status === 'available' && (
-            <div className={`p-3.5 rounded-lg border text-xs space-y-2.5 ${
-              isLight ? 'bg-sky-50 border-sky-200 text-sky-900' : 'bg-sky-950/30 border-sky-500/30 text-sky-200'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div className="font-semibold flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <span>{t('updater.available')} <strong className="font-mono text-sm">{updateState.availableVersion}</strong></span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleDownloadUpdate}
-                  className="px-3 py-1.5 rounded-lg font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow transition-all"
-                >
-                  {t('updater.downloadNow')}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {updateState.status === 'downloading' && (
-            <div className={`p-3.5 rounded-lg border text-xs space-y-2 ${
-              isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#282828] border-white/10'
-            }`}>
-              <div className="flex items-center justify-between">
-                <span className="font-medium flex items-center gap-2">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-500" />
-                  {t('updater.downloading')}
-                </span>
-                <span className="font-mono font-bold text-sky-500">
-                  {updateState.progress?.percent || 0}%
-                </span>
-              </div>
-              <div className="w-full h-2 rounded-full bg-black/20 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-sky-500 to-teal-400 transition-all duration-300"
-                  style={{ width: `${updateState.progress?.percent || 0}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {updateState.status === 'downloaded' && (
-            <div className={`p-3.5 rounded-lg border text-xs space-y-2.5 ${
-              isLight ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div className="font-semibold flex items-center gap-1.5">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  <span>{t('updater.downloaded')}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleInstallUpdate}
-                  className="px-3.5 py-1.5 rounded-lg font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-all"
-                >
-                  {t('updater.restartAndInstall')}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {updateState.status === 'error' && (
-            <div className={`p-3 rounded-lg border text-xs text-red-400 flex items-start gap-2 ${
-              isLight ? 'bg-red-50 border-red-200 text-red-700' : 'bg-red-950/30 border-red-500/20'
-            }`}>
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>{t('updater.updateError')} {updateState.error}</span>
-            </div>
-          )}
-
-          <div className="pt-2">
-            <button
-              type="button"
-              disabled={updateState.status === 'checking' || updateState.status === 'downloading'}
-              onClick={handleCheckUpdate}
-              className={`px-4 py-2 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-colors disabled:opacity-50 ${
-                isLight
-                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
-                  : 'bg-[#2b2b2b] hover:bg-[#333] border-[#444] text-slate-200 hover:text-white'
-              }`}
-            >
-              {updateState.status === 'checking' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
-              )}
-              <span>{updateState.status === 'checking' ? t('updater.checking') : t('updater.checkNow')}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* About & Support / Mission & Donation Section */}
+        {/* About BesTTY Section */}
         <div className={`border rounded-xl p-5 space-y-4 shadow-sm relative overflow-hidden ${
           isLight ? 'bg-white border-slate-200' : 'bg-[#202020] border-[#303030]'
         }`}>
@@ -484,7 +332,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="flex items-center space-x-2">
                   <h3 className="text-sm font-bold font-mono">BesTTY</h3>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/20 font-medium">
-                    v{updateState.currentVersion || '1.0.0'}
+                    v1.0.0
                   </span>
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
                     Open Source
@@ -497,14 +345,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {onOpenAbout && (
-              <button
-                type="button"
-                onClick={onOpenAbout}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow transition-all flex items-center space-x-1.5"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{t('about.title')}</span>
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenAbout('updates')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border flex items-center space-x-1.5 transition-all ${
+                    isLight 
+                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800' 
+                      : 'bg-[#2b2b2b] hover:bg-[#333] border-[#444] text-slate-200'
+                  }`}
+                >
+                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{t('updater.title')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenAbout('mission')}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow transition-all flex items-center space-x-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{t('about.title')}</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -524,7 +386,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {onOpenAbout && (
               <button
                 type="button"
-                onClick={onOpenAbout}
+                onClick={() => onOpenAbout('donate')}
                 className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white shadow-md transition-all flex items-center space-x-1.5 flex-shrink-0"
               >
                 <Heart className="w-3.5 h-3.5 fill-white" />

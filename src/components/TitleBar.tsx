@@ -15,7 +15,7 @@ interface TitleBarProps {
   onDuplicateTab?: () => void;
   onOpenHelp?: () => void;
   onOpenSettings?: () => void;
-  onOpenAbout?: () => void;
+  onOpenAbout?: (tab?: 'mission' | 'updates' | 'donate') => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -72,7 +72,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       {/* Brand & Tabs Region */}
       <div className="flex items-center space-x-2 flex-1 overflow-x-auto no-scrollbar pr-4 titlebar-drag-region">
         <div
-          onClick={onOpenAbout}
+          onClick={() => onOpenAbout?.('mission')}
           className="flex items-center space-x-2 px-2 py-1 titlebar-no-drag cursor-pointer hover:opacity-80 transition-opacity group"
           title={t('about.title')}
         >
@@ -141,7 +141,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <button
               onClick={onDuplicateTab}
               className="p-1.5 rounded-md text-amber-500 hover:text-amber-400 hover:bg-amber-500/20 transition-colors titlebar-no-drag"
-              title="Duplicate Session: Open a new tab to current host (SmarTTY)"
+              title={t('titlebar.duplicateTab')}
             >
               <Zap className="w-4 h-4 fill-amber-500 text-amber-500" />
             </button>
@@ -151,9 +151,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
       {/* Windows 11 Titlebar Controls */}
       <div className="flex items-center space-x-0 titlebar-no-drag">
-        {updateAvailable && onOpenSettings && (
+        {updateAvailable && (onOpenAbout || onOpenSettings) && (
           <button
-            onClick={onOpenSettings}
+            onClick={() => (onOpenAbout ? onOpenAbout('updates') : onOpenSettings?.())}
             className="px-2.5 h-6 my-auto mr-2 flex items-center gap-1.5 rounded-full text-[11px] font-medium bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-md animate-pulse hover:animate-none transition-all cursor-pointer"
             title={t('updater.updateBadge')}
           >
