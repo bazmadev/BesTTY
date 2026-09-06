@@ -64,8 +64,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="absolute left-0 top-2 bottom-2 w-0.5 bg-sky-500 rounded-r" />
               )}
 
-              {/* Badge for active sessions */}
-              {item.badge !== undefined && item.badge > 0 && (
+              {/* Badge for active sessions (only shown when 2 or more) */}
+              {item.badge !== undefined && item.badge >= 2 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-sky-500 text-white font-mono text-[9px] font-bold rounded-full flex items-center justify-center shadow">
                   {item.badge}
                 </span>
