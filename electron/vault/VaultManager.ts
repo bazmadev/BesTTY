@@ -478,15 +478,30 @@ export class VaultManager {
     if (this.isMasterPasswordSet) {
       this.isUnlocked = false;
       this.dek = null;
+      // Security: Flush plaintext credentials, passwords and keys from RAM
+      this.memoryData = {
+        version: 2,
+        isMasterPasswordSet: true,
+        hosts: [],
+        snippets: this.memoryData.snippets || DEFAULT_SNIPPETS,
+        tunnels: [],
+        settings: this.memoryData.settings || DEFAULT_SETTINGS,
+      };
     }
   }
 
   // Hosts
   public getHosts(): HostProfile[] {
+    if (!this.isUnlocked) {
+      return [];
+    }
     return this.memoryData.hosts;
   }
 
   public saveHost(host: HostProfile): void {
+    if (!this.isUnlocked) {
+      throw new Error('Vault is locked. Unlock the vault to modify hosts.');
+    }
     const idx = this.memoryData.hosts.findIndex(h => h.id === host.id);
     if (idx >= 0) {
       this.memoryData.hosts[idx] = { ...host, updatedAt: Date.now() };
@@ -497,6 +512,9 @@ export class VaultManager {
   }
 
   public deleteHost(id: string): void {
+    if (!this.isUnlocked) {
+      throw new Error('Vault is locked. Unlock the vault to delete hosts.');
+    }
     this.memoryData.hosts = this.memoryData.hosts.filter(h => h.id !== id);
     this.save();
   }
@@ -507,6 +525,9 @@ export class VaultManager {
   }
 
   public saveSnippet(snippet: Snippet): void {
+    if (!this.isUnlocked) {
+      throw new Error('Vault is locked. Unlock the vault to modify snippets.');
+    }
     const idx = this.memoryData.snippets.findIndex(s => s.id === snippet.id);
     if (idx >= 0) {
       this.memoryData.snippets[idx] = snippet;
@@ -517,16 +538,25 @@ export class VaultManager {
   }
 
   public deleteSnippet(id: string): void {
+    if (!this.isUnlocked) {
+      throw new Error('Vault is locked. Unlock the vault to delete snippets.');
+    }
     this.memoryData.snippets = this.memoryData.snippets.filter(s => s.id !== id);
     this.save();
   }
 
   // Tunnels
   public getTunnels(): TunnelConfig[] {
+    if (!this.isUnlocked) {
+      return [];
+    }
     return this.memoryData.tunnels;
   }
 
   public saveTunnel(tunnel: TunnelConfig): void {
+    if (!this.isUnlocked) {
+      throw new Error('Vault is locked. Unlock the vault to modify tunnels.');
+    }
     const idx = this.memoryData.tunnels.findIndex(t => t.id === tunnel.id);
     if (idx >= 0) {
       this.memoryData.tunnels[idx] = tunnel;
@@ -537,6 +567,9 @@ export class VaultManager {
   }
 
   public deleteTunnel(id: string): void {
+    if (!this.isUnlocked) {
+      throw new Error('Vault is locked. Unlock the vault to delete tunnels.');
+    }
     this.memoryData.tunnels = this.memoryData.tunnels.filter(t => t.id !== id);
     this.save();
   }

@@ -152,8 +152,12 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         text = await navigator.clipboard.readText();
       }
       if (text) {
-        window.api?.ssh.write(sessionId, text);
-        xtermInstance.current?.focus();
+        if (xtermInstance.current) {
+          xtermInstance.current.paste(text);
+          xtermInstance.current.focus();
+        } else {
+          window.api?.ssh.write(sessionId, text);
+        }
       }
     } catch (err) {
       console.error('Failed to paste clipboard text:', err);
@@ -402,9 +406,15 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         return true; // No selection: send SIGINT
       }
 
-      // Ctrl+V or Ctrl+Shift+V: paste from clipboard
-      if ((event.ctrlKey && event.code === 'KeyV') || (event.ctrlKey && event.shiftKey && event.code === 'KeyV')) {
+      // Ctrl+V, Ctrl+Shift+V, or Shift+Insert: paste from clipboard
+      const isPasteShortcut =
+        (event.ctrlKey && !event.altKey && (event.code === 'KeyV' || event.key === 'v' || event.key === 'V')) ||
+        (event.shiftKey && !event.altKey && !event.ctrlKey && event.code === 'Insert');
+
+      if (isPasteShortcut) {
         if (event.type === 'keydown') {
+          event.preventDefault();
+          event.stopPropagation();
           handlePasteFromClipboard();
         }
         return false;

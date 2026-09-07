@@ -181,9 +181,15 @@ function setupAuthPipeline(
 function formatAuthError(
   rawError: string,
   host: HostProfile,
-  serverMethods: string[] | null
+  serverMethods: string[] | null,
+  detectedFingerprint?: string
 ): string {
   const username = getEffectiveUsername(host.username);
+
+  if (rawError.includes('Host key verification failed')) {
+    return `КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ БЕЗОПАСНОСТИ (TOFU): Отпечаток открытого ключа сервера изменился!\nОжидаемый: ${host.fingerprint}\nПолученный: ${detectedFingerprint || 'неизвестно'}\nВозможно, сервер был переустановлен, либо происходит атака типа Man-in-the-Middle (перехват сетевого трафика). BesTTY заблокировал подключение для защиты ваших учетных данных. Если сервер действительно был переустановлен, обновите или сотрите отпечаток в свойствах хоста.`;
+  }
+
   if (rawError.includes('All configured authentication methods failed')) {
     if (serverMethods && serverMethods.length > 0) {
       const allowsPassword =
@@ -230,7 +236,16 @@ export class SSHClientManager extends EventEmitter {
         hostHash: 'sha256',
         hostVerifier: (fingerprint: string) => {
           detectedFingerprint = `SHA256:${fingerprint}`;
-          return true; // TOFU (Trust On First Use)
+          // True TOFU check: If we have an established fingerprint, verify against MITM
+          if (host.fingerprint && host.fingerprint.trim()) {
+            const expected = host.fingerprint.trim();
+            const actual = detectedFingerprint.trim();
+            if (expected !== actual) {
+              console.error(`[SSH Security Alert] Host key mismatch for ${host.host}! Expected: ${expected}, Received: ${actual}`);
+              return false; // Abort connection! Protects against Man-in-the-Middle attack
+            }
+          }
+          return true;
         },
         algorithms: SSH_ALGORITHMS as any,
       };
@@ -276,9 +291,16 @@ export class SSHClientManager extends EventEmitter {
               // SmarTTY: Parse OSC 7 directory update sequence
               const osc7Match = str.match(/\x1b\]7;file:\/\/[^\/]*(\/[^\x07\x1b]*)(?:\x07|\x1b\\)/);
               if (osc7Match && osc7Match[1]) {
-                const detectedDir = decodeURIComponent(osc7Match[1]);
-                sessionInfo.currentDirectory = detectedDir;
-                this.emit('directory-changed', { sessionId, directory: detectedDir });
+                try {
+                  const rawDir = decodeURIComponent(osc7Match[1]);
+                  // Security: sanitize directory path to prevent control char injection
+                  const cleanDir = rawDir.replace(/[\x00-\x1f]/g, '');
+                  const normalizedDir = path.posix.normalize(cleanDir);
+                  sessionInfo.currentDirectory = normalizedDir;
+                  this.emit('directory-changed', { sessionId, directory: normalizedDir });
+                } catch {
+                  // ignore malformed OSC 7
+                }
               }
 
               this.emit('data', { sessionId, data: str });
@@ -302,7 +324,8 @@ export class SSHClientManager extends EventEmitter {
         const diagnosticError = formatAuthError(
           err.message || String(err),
           host,
-          authPipeline.getServerMethodsAllowed()
+          authPipeline.getServerMethodsAllowed(),
+          detectedFingerprint
         );
         console.error(`SSH Client error for session ${sessionId}:`, diagnosticError);
         this.emit('ssh-error', { sessionId, error: diagnosticError });
@@ -387,7 +410,8 @@ export class SSHClientManager extends EventEmitter {
         const diagnosticError = formatAuthError(
           err.message || String(err),
           host,
-          authPipeline.getServerMethodsAllowed()
+          authPipeline.getServerMethodsAllowed(),
+          detectedFingerprint
         );
         cleanupAndResolve(false, diagnosticError);
       });

@@ -166,8 +166,19 @@ export class MonitorService extends EventEmitter {
     const session = this.sshManager.getSession(sessionId);
     if (!session || !session.client) return false;
 
+    // Security: strictly validate PID to prevent command injection or killing systemd/init
+    const numericPid = Number(pid);
+    if (!Number.isInteger(numericPid) || numericPid <= 1) {
+      console.warn(`[MonitorService Security] Rejected invalid or dangerous PID: ${pid}`);
+      return false;
+    }
+
+    // Security: strictly allowlist valid POSIX signals
+    const allowedSignals = ['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGHUP', 'SIGQUIT', '9', '15'];
+    const safeSignal = allowedSignals.includes(signal) ? signal : 'SIGTERM';
+
     return new Promise((resolve) => {
-      session.client.exec(`kill -s ${signal} ${pid}`, (err, stream) => {
+      session.client.exec(`kill -s ${safeSignal} ${numericPid}`, (err, stream) => {
         if (err) return resolve(false);
         stream.on('close', (code: number) => resolve(code === 0));
         stream.on('error', () => resolve(false));

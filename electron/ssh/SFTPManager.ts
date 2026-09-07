@@ -128,9 +128,17 @@ export class SFTPManager {
       throw new Error(`SSH Session ${sessionId} not found`);
     }
 
+    // Security: Prevent path traversal attacks and reject control characters
+    if (/[\x00-\x1f]/.test(remotePath)) {
+      throw new Error('Invalid path: contains illegal control characters');
+    }
+
+    // POSIX shell-safe escaping: wrap in single quotes and escape embedded single quotes
+    const safePath = `'${remotePath.replace(/'/g, "'\\''")}'`;
+
     return new Promise((resolve, reject) => {
-      // Use sudo tee to safely write protected file
-      session.client.exec(`sudo tee "${remotePath}" > /dev/null`, (err, stream) => {
+      // Use sudo tee with properly escaped path to safely write protected file
+      session.client.exec(`sudo tee ${safePath} > /dev/null`, (err, stream) => {
         if (err) return reject(err);
 
         stream.on('close', (code: number) => {

@@ -68,6 +68,11 @@ export class TunnelManager extends EventEmitter {
             }
           } else {
             // Connection request: [0x05, CMD, RSV, ATYP, DST.ADDR, DST.PORT]
+            if (data.length < 7) {
+              socket.destroy();
+              return;
+            }
+
             if (data[0] === 0x05 && data[1] === 0x01) {
               let host = '';
               let port = 0;
@@ -75,16 +80,29 @@ export class TunnelManager extends EventEmitter {
 
               let offset = 4;
               if (atyp === 0x01) {
-                // IPv4
+                // IPv4: requires 4 (header) + 4 (IPv4) + 2 (port) = 10 bytes
+                if (data.length < 10) {
+                  socket.destroy();
+                  return;
+                }
                 host = `${data[4]}.${data[5]}.${data[6]}.${data[7]}`;
                 offset = 8;
               } else if (atyp === 0x03) {
                 // Domain name
                 const len = data[4];
+                if (data.length < 5 + len + 2) {
+                  socket.destroy();
+                  return;
+                }
                 host = data.subarray(5, 5 + len).toString('ascii');
                 offset = 5 + len;
-              } else if (atyp === 0x04) {
-                // IPv6
+              } else {
+                // IPv6 or unsupported
+                socket.destroy();
+                return;
+              }
+
+              if (data.length < offset + 2) {
                 socket.destroy();
                 return;
               }

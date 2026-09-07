@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, clipboard } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, clipboard, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { VaultManager } from './vault/VaultManager';
@@ -19,6 +19,9 @@ const autoUpdaterManager = new AutoUpdaterManager();
 
 function createWindow() {
   const iconCandidates = [
+    path.join(__dirname, '../../public/icon.ico'),
+    path.join(app.getAppPath(), 'public/icon.ico'),
+    path.join(app.getAppPath(), 'dist/icon.ico'),
     path.join(__dirname, '../../public/icon.png'),
     path.join(__dirname, '../../public/logo.png'),
     path.join(app.getAppPath(), 'public/icon.png'),
@@ -49,6 +52,35 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(app.getAppPath(), 'dist/index.html'));
   }
+
+  // Security: Prevent window navigation to untrusted external URLs
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const isAllowedInternal = url.startsWith('http://localhost:5173') || url.startsWith('file://');
+    if (!isAllowedInternal) {
+      event.preventDefault();
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          shell.openExternal(url);
+        }
+      } catch {
+        // ignore invalid url
+      }
+    }
+  });
+
+  // Security: Handle target="_blank" and window.open by opening in default system browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        shell.openExternal(url);
+      }
+    } catch {
+      // ignore invalid url
+    }
+    return { action: 'deny' };
+  });
 
   // SSH Manager event forwarders
   sshManager.on('data', (payload) => {
