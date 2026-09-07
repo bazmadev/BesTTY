@@ -77,6 +77,8 @@ export const ru: TranslationDictionary = {
     fixCredentials: 'Исправить данные',
     ignoreAndSave: 'Игнорировать и сохранить',
     passwordRequiredForTest: 'Укажите пароль для проверки соединения (или сохраните подключение без пароля — он будет запрошен при входе).',
+    allowLegacyCiphersLabel: 'Разрешить устаревшие шифры (3DES, MD5, SHA-1)',
+    allowLegacyCiphersDesc: 'Включайте только для совместимости со старыми серверами и сетевым оборудованием (Cisco, MikroTik). По умолчанию отключено для максимальной криптографической стойкости.',
   },
   authPrompt: {
     title: 'Требуется SSH-аутентификация',

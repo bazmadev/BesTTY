@@ -75,6 +75,8 @@ export const en = {
     fixCredentials: 'Fix Details',
     ignoreAndSave: 'Ignore & Save Anyway',
     passwordRequiredForTest: 'Please provide a password to test the connection (or save without password to be prompted upon connection).',
+    allowLegacyCiphersLabel: 'Allow legacy ciphers (3DES, MD5, SHA-1)',
+    allowLegacyCiphersDesc: 'Enable only for compatibility with older legacy servers or network hardware (Cisco, MikroTik). Disabled by default for maximum cryptographic security.',
   },
   authPrompt: {
     title: 'SSH Authentication Required',

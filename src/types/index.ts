@@ -19,6 +19,7 @@ export interface HostProfile {
   keepAliveInterval?: number;
   notes?: string;
   fingerprint?: string; // SSH host key fingerprint (TOFU)
+  allowLegacyCiphers?: boolean; // Allow weak/legacy algorithms (3DES, MD5, SHA-1)
   createdAt: number;
   updatedAt: number;
 }

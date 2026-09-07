@@ -39,6 +39,7 @@ export const HostModal: React.FC<HostModalProps> = ({
   const [color, setColor] = useState('#0078d4');
   const [defaultPath, setDefaultPath] = useState('');
   const [proxyJumpId, setProxyJumpId] = useState('');
+  const [allowLegacyCiphers, setAllowLegacyCiphers] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Connection testing state
@@ -65,6 +66,7 @@ export const HostModal: React.FC<HostModalProps> = ({
       setColor(hostToEdit.color || '#0078d4');
       setDefaultPath(hostToEdit.defaultPath || '');
       setProxyJumpId(hostToEdit.proxyJumpId || '');
+      setAllowLegacyCiphers(hostToEdit.allowLegacyCiphers || false);
       setSmartPaste('');
     } else {
       setName('');
@@ -80,6 +82,7 @@ export const HostModal: React.FC<HostModalProps> = ({
       setColor('#0078d4');
       setDefaultPath('');
       setProxyJumpId('');
+      setAllowLegacyCiphers(false);
       setSmartPaste('');
     }
     setTestResult(null);
@@ -128,6 +131,7 @@ export const HostModal: React.FC<HostModalProps> = ({
       defaultPath: defaultPath.trim() || undefined,
       proxyJumpId: proxyJumpId || undefined,
       fingerprint: extraFingerprint || hostToEdit?.fingerprint,
+      allowLegacyCiphers,
       createdAt: hostToEdit ? hostToEdit.createdAt : Date.now(),
       updatedAt: Date.now(),
     };
@@ -541,6 +545,35 @@ export const HostModal: React.FC<HostModalProps> = ({
                       />
                     ))}
                   </div>
+                </div>
+
+                {/* Allow Legacy / Weak Ciphers Toggle */}
+                <div className={`p-3 rounded-lg border transition-all ${
+                  allowLegacyCiphers 
+                    ? isLight ? 'bg-amber-50 border-amber-300' : 'bg-amber-950/30 border-amber-600/40'
+                    : isLight ? 'bg-slate-100/70 border-slate-200' : 'bg-[#272727]/60 border-[#3d3d3d]'
+                }`}>
+                  <label className="flex items-start space-x-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={allowLegacyCiphers}
+                      onChange={(e) => setAllowLegacyCiphers(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-600 text-amber-500 focus:ring-amber-500 focus:ring-offset-0 bg-[#1e1e1e]"
+                    />
+                    <div className="flex-1 text-xs">
+                      <div className={`font-semibold flex items-center gap-1.5 ${
+                        allowLegacyCiphers ? 'text-amber-400' : isLight ? 'text-slate-800' : 'text-slate-200'
+                      }`}>
+                        <Shield className={`w-3.5 h-3.5 ${allowLegacyCiphers ? 'text-amber-400' : 'text-slate-400'}`} />
+                        <span>{t('modal.allowLegacyCiphersLabel')}</span>
+                      </div>
+                      <p className={`text-[11px] mt-0.5 leading-relaxed ${
+                        isLight ? 'text-slate-600' : 'text-slate-400'
+                      }`}>
+                        {t('modal.allowLegacyCiphersDesc')}
+                      </p>
+                    </div>
+                  </label>
                 </div>
               </div>
             )}

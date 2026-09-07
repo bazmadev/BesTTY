@@ -15,7 +15,12 @@ export interface SSHSessionInfo {
   fingerprint?: string;
 }
 
-export const SSH_ALGORITHMS = {
+/**
+ * Legacy / weak algorithms for compatibility with ancient embedded hardware/routers.
+ * These are only appended if the user explicitly enables `allowLegacyCiphers` in host settings.
+ * Includes: 3des-cbc (Sweet32 vulnerability), hmac-md5, diffie-hellman-group1-sha1 (Logjam 768-1024b), ssh-dss.
+ */
+export const LEGACY_SSH_ALGORITHMS = {
   kex: {
     append: [
       'diffie-hellman-group-exchange-sha1',
@@ -33,7 +38,6 @@ export const SSH_ALGORITHMS = {
   },
   serverHostKey: {
     append: [
-      'ssh-rsa',
       'ssh-dss',
     ],
   },
@@ -44,6 +48,7 @@ export const SSH_ALGORITHMS = {
     ],
   },
 };
+export const SSH_ALGORITHMS = LEGACY_SSH_ALGORITHMS;
 
 function getEffectiveUsername(username?: string): string {
   const trimmed = (username || 'root').trim();
@@ -247,7 +252,8 @@ export class SSHClientManager extends EventEmitter {
           }
           return true;
         },
-        algorithms: SSH_ALGORITHMS as any,
+        // Security: only enable weak/legacy ciphers (3DES, MD5, SHA1) if explicitly allowed
+        ...(host.allowLegacyCiphers ? { algorithms: LEGACY_SSH_ALGORITHMS as any } : {}),
       };
 
       // Configure Authentication & Pipeline
@@ -394,9 +400,18 @@ export class SSHClientManager extends EventEmitter {
         hostHash: 'sha256',
         hostVerifier: (fingerprint: string) => {
           detectedFingerprint = `SHA256:${fingerprint}`;
+          if (host.fingerprint && host.fingerprint.trim()) {
+            const expected = host.fingerprint.trim();
+            const actual = detectedFingerprint.trim();
+            if (expected !== actual) {
+              console.error(`[SSH Security Alert] Host key mismatch in testConnection for ${host.host}! Expected: ${expected}, Received: ${actual}`);
+              return false;
+            }
+          }
           return true; // TOFU
         },
-        algorithms: SSH_ALGORITHMS as any,
+        // Security: only enable weak/legacy ciphers (3DES, MD5, SHA1) if explicitly allowed
+        ...(host.allowLegacyCiphers ? { algorithms: LEGACY_SSH_ALGORITHMS as any } : {}),
       };
 
       applyAuthConfig(config, host);
