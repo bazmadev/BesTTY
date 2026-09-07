@@ -115,9 +115,15 @@ export interface BesTTYSettings {
   enableHardwareAcceleration: boolean;
 }
 
+export type VaultProtectionMode = 'system' | 'password' | 'plain';
+
 export interface VaultStatus {
   isConfigured: boolean;
   isUnlocked: boolean;
+  protectionMode: VaultProtectionMode;
+  biometricsAvailable: boolean;
+  biometricsEnabled: boolean;
+  biometricsStatus?: string;
 }
 
 export interface UpdateProgress {

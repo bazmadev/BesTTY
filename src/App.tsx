@@ -18,7 +18,7 @@ import { AboutModal } from './components/AboutModal';
 import { TabItem, TabType, HostProfile, Snippet, TunnelConfig, BesTTYSettings, VaultStatus, UpdateState } from './types';
 import { I18nProvider, useTranslation } from './i18n';
 import { parseSSHConnectionString } from './utils/sshParser';
-import { ShieldCheck, Lock, Radio } from 'lucide-react';
+import { ShieldCheck, Lock, Radio, AlertCircle } from 'lucide-react';
 
 const MainApp: React.FC = () => {
   const { t, locale } = useTranslation();
@@ -38,7 +38,13 @@ const MainApp: React.FC = () => {
   };
 
   // Vault & Data State
-  const [vaultStatus, setVaultStatus] = useState<VaultStatus>({ isConfigured: false, isUnlocked: true });
+  const [vaultStatus, setVaultStatus] = useState<VaultStatus>({
+    isConfigured: true,
+    isUnlocked: true,
+    protectionMode: 'system',
+    biometricsAvailable: false,
+    biometricsEnabled: false,
+  });
   const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
   const [hosts, setHosts] = useState<HostProfile[]>([]);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
@@ -663,12 +669,14 @@ const MainApp: React.FC = () => {
           {currentView === 'settings' && (
             <SettingsView
               settings={settings}
+              vaultStatus={vaultStatus}
               isLight={isLight}
               onSaveSettings={async (newSettings) => {
                 await window.api.vault.saveSettings(newSettings);
                 setSettings(await window.api.vault.getSettings());
               }}
               onSetupVault={() => setIsVaultModalOpen(true)}
+              onReloadVaultStatus={loadVaultData}
               onOpenAbout={(tab) => handleOpenAbout(tab)}
             />
           )}
@@ -710,24 +718,35 @@ const MainApp: React.FC = () => {
 
         {/* Center: Encrypted Vault Indicator */}
         <div
-          onClick={() => setIsVaultModalOpen(true)}
+          onClick={() => {
+            if (vaultStatus.protectionMode === 'password' && !vaultStatus.isUnlocked) {
+              setIsVaultModalOpen(true);
+            } else {
+              setCurrentView('settings');
+            }
+          }}
           className="flex items-center space-x-1.5 cursor-pointer hover:text-sky-400 transition-colors"
-          title="Click to configure or unlock AES-256-GCM Vault"
+          title="Click to view Vault Security Settings"
         >
-          {vaultStatus.isConfigured && vaultStatus.isUnlocked ? (
+          {vaultStatus.protectionMode === 'plain' ? (
+            <>
+              <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+              <span className="font-medium text-amber-400">Vault: Plaintext</span>
+            </>
+          ) : vaultStatus.protectionMode === 'system' ? (
+            <>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="font-medium text-emerald-400">DPAPI Защищено</span>
+            </>
+          ) : vaultStatus.isUnlocked ? (
             <>
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span className="font-medium text-emerald-400">{t('statusBar.vaultProtected')}</span>
             </>
-          ) : vaultStatus.isConfigured && !vaultStatus.isUnlocked ? (
+          ) : (
             <>
               <Lock className="w-3.5 h-3.5 text-rose-400" />
               <span className="font-medium text-rose-400">Vault Locked</span>
-            </>
-          ) : (
-            <>
-              <Lock className="w-3.5 h-3.5 text-amber-400" />
-              <span className="font-medium text-amber-400">{t('statusBar.vaultUnprotected')}</span>
             </>
           )}
         </div>

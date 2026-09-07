@@ -6,8 +6,11 @@ declare global {
       vault: {
         getStatus: () => Promise<VaultStatus>;
         unlock: (password: string) => Promise<boolean>;
+        unlockWithBiometrics: () => Promise<boolean>;
         setupMasterPassword: (password: string, recoveryKey: string) => Promise<{ success: boolean; error?: string }>;
         recoverWithKey: (recoveryKey: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
+        setProtectionMode: (mode: VaultProtectionMode, password?: string, recoveryKey?: string) => Promise<{ success: boolean; error?: string }>;
+        toggleBiometrics: (enabled: boolean) => Promise<{ success: boolean; error?: string }>;
         lock: () => Promise<void>;
         getHosts: () => Promise<HostProfile[]>;
         saveHost: (host: HostProfile) => Promise<void>;
@@ -20,6 +23,10 @@ declare global {
         deleteTunnel: (id: string) => Promise<void>;
         getSettings: () => Promise<BesTTYSettings>;
         saveSettings: (settings: Partial<BesTTYSettings>) => Promise<void>;
+      };
+      biometrics: {
+        checkAvailability: () => Promise<{ available: boolean; status: string; description?: string }>;
+        promptVerification: (prompt?: string) => Promise<{ success: boolean; error?: string }>;
       };
       ssh: {
         connect: (sessionId: string, host: HostProfile, cols: number, rows: number) => Promise<void>;

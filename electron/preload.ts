@@ -5,10 +5,15 @@ contextBridge.exposeInMainWorld('api', {
   vault: {
     getStatus: () => ipcRenderer.invoke('vault:getStatus'),
     unlock: (password: string) => ipcRenderer.invoke('vault:unlock', password),
+    unlockWithBiometrics: () => ipcRenderer.invoke('vault:unlockWithBiometrics'),
     setupMasterPassword: (password: string, recoveryKey: string) =>
       ipcRenderer.invoke('vault:setupMasterPassword', password, recoveryKey),
     recoverWithKey: (recoveryKey: string, newPassword: string) =>
       ipcRenderer.invoke('vault:recoverWithKey', recoveryKey, newPassword),
+    setProtectionMode: (mode: any, password?: string, recoveryKey?: string) =>
+      ipcRenderer.invoke('vault:setProtectionMode', mode, password, recoveryKey),
+    toggleBiometrics: (enabled: boolean) =>
+      ipcRenderer.invoke('vault:toggleBiometrics', enabled),
     lock: () => ipcRenderer.invoke('vault:lock'),
     getHosts: () => ipcRenderer.invoke('vault:getHosts'),
     saveHost: (host: HostProfile) => ipcRenderer.invoke('vault:saveHost', host),
@@ -21,6 +26,11 @@ contextBridge.exposeInMainWorld('api', {
     deleteTunnel: (id: string) => ipcRenderer.invoke('vault:deleteTunnel', id),
     getSettings: () => ipcRenderer.invoke('vault:getSettings'),
     saveSettings: (settings: Partial<BesTTYSettings>) => ipcRenderer.invoke('vault:saveSettings', settings),
+  },
+
+  biometrics: {
+    checkAvailability: () => ipcRenderer.invoke('biometrics:checkAvailability'),
+    promptVerification: (prompt?: string) => ipcRenderer.invoke('biometrics:promptVerification', prompt),
   },
 
   ssh: {

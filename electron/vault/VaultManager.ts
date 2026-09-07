@@ -1,8 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { app } from 'electron';
-import { HostProfile, Snippet, TunnelConfig, BesTTYSettings } from '../../src/types';
+import { app, safeStorage } from 'electron';
+import { HostProfile, Snippet, TunnelConfig, BesTTYSettings, VaultProtectionMode, VaultStatus } from '../../src/types';
+import { BiometricService } from '../biometrics/BiometricService';
 
 interface VaultData {
   version: number;
@@ -13,16 +14,16 @@ interface VaultData {
   settings: BesTTYSettings;
 }
 
-interface WrappedKey {
-  salt: string; // hex
-  iv: string;   // hex
-  tag: string;  // hex
-  ciphertext: string; // hex
-}
-
 interface VaultEnvelope {
   format: 'bestty-v2';
+  protectionMode: VaultProtectionMode;
   isMasterPasswordSet: boolean;
+  useBiometrics?: boolean;
+
+  // Mode: system (DPAPI / safeStorage wrapped DEK)
+  systemWrappedDek?: string; // hex
+
+  // Mode: password (PBKDF2 wrapped DEK)
   passwordSalt?: string;
   passwordWrappedDek?: {
     iv: string;
@@ -36,14 +37,24 @@ interface VaultEnvelope {
     tag: string;
     ciphertext: string;
   };
+
+  // Biometric fast-unlock wrapped DEK (encrypted by safeStorage, decrypted after biometric verification)
+  biometricWrappedDek?: string; // hex
+
+  // Legacy fallback (v2 early builds)
   unprotectedWrappedDek?: {
     iv: string;
     tag: string;
     ciphertext: string;
   };
-  payloadIv: string;
-  payloadTag: string;
-  payloadCiphertext: string;
+
+  // Payload for encrypted modes (system & password)
+  payloadIv?: string;
+  payloadTag?: string;
+  payloadCiphertext?: string;
+
+  // Plaintext data (only used in 'plain' mode)
+  plainData?: VaultData;
 }
 
 const DEFAULT_SETTINGS: BesTTYSettings = {
@@ -78,15 +89,20 @@ function normalizeRecoveryKey(input: string): string {
 
 export class VaultManager {
   private vaultPath: string;
+  private protectionMode: VaultProtectionMode = 'system';
   private isMasterPasswordSet: boolean = false;
   private isUnlocked: boolean = true;
   private dek: Buffer | null = null;
   private envelope: VaultEnvelope | null = null;
   private memoryData: VaultData;
+  private biometricService: BiometricService;
+  private biometricsAvailable: boolean = false;
+  private biometricsStatus: string = 'DeviceNotPresent';
 
-  constructor() {
+  constructor(biometricService?: BiometricService) {
     const userDataPath = app.getPath('userData');
     this.vaultPath = path.join(userDataPath, 'bestty-vault.enc');
+    this.biometricService = biometricService || new BiometricService();
     this.memoryData = {
       version: 2,
       isMasterPasswordSet: false,
@@ -95,12 +111,23 @@ export class VaultManager {
       tunnels: [],
       settings: DEFAULT_SETTINGS,
     };
+  }
+
+  public async init(): Promise<void> {
+    try {
+      const bio = await this.biometricService.checkAvailability();
+      this.biometricsAvailable = bio.available;
+      this.biometricsStatus = bio.status;
+    } catch {
+      this.biometricsAvailable = false;
+      this.biometricsStatus = 'Error';
+    }
 
     this.initFromDisk();
   }
 
   private deriveKey(passwordOrSecret: string, salt: Buffer): Buffer {
-    // PBKDF2 with 100,000 iterations for strong brute force resistance
+    // PBKDF2 with 100,000 iterations for strong brute-force resistance
     return crypto.pbkdf2Sync(passwordOrSecret, salt, 100000, 32, 'sha512');
   }
 
@@ -108,24 +135,92 @@ export class VaultManager {
     return crypto.createHash('sha256').update('bestty-default-passphrase').digest();
   }
 
+  private canUseSafeStorage(): boolean {
+    try {
+      return safeStorage && safeStorage.isEncryptionAvailable();
+    } catch {
+      return false;
+    }
+  }
+
+  private wrapWithSafeStorage(buffer: Buffer): string | null {
+    if (!this.canUseSafeStorage()) return null;
+    try {
+      const encrypted = safeStorage.encryptString(buffer.toString('hex'));
+      return encrypted.toString('hex');
+    } catch (err) {
+      console.error('Failed to wrap with safeStorage:', err);
+      return null;
+    }
+  }
+
+  private unwrapWithSafeStorage(hexStr: string): Buffer | null {
+    if (!this.canUseSafeStorage()) return null;
+    try {
+      const encryptedBuf = Buffer.from(hexStr, 'hex');
+      const decryptedHex = safeStorage.decryptString(encryptedBuf);
+      return Buffer.from(decryptedHex, 'hex');
+    } catch (err) {
+      console.error('Failed to unwrap with safeStorage:', err);
+      return null;
+    }
+  }
+
   private initFromDisk(): void {
     if (!fs.existsSync(this.vaultPath)) {
+      // First run: default to 'system' mode (Windows DPAPI safeStorage)
+      this.protectionMode = 'system';
       this.isMasterPasswordSet = false;
       this.isUnlocked = true;
       this.dek = crypto.randomBytes(32);
+      this.save();
       return;
     }
 
     try {
       const raw = fs.readFileSync(this.vaultPath);
-      // Check if file starts with '{' (v2 format)
+      // Check if JSON v2 format
       if (raw.length > 0 && raw[0] === 0x7B) {
         const env = JSON.parse(raw.toString('utf8')) as VaultEnvelope;
         this.envelope = env;
-        this.isMasterPasswordSet = env.isMasterPasswordSet;
+        this.isMasterPasswordSet = Boolean(env.isMasterPasswordSet);
 
-        if (!env.isMasterPasswordSet && env.unprotectedWrappedDek) {
-          // Unprotected vault: automatically unlock using fallback key
+        // Determine protection mode
+        let mode: VaultProtectionMode = env.protectionMode || (env.isMasterPasswordSet ? 'password' : 'system');
+        this.protectionMode = mode;
+
+        if (mode === 'plain') {
+          // Plain mode: load plainData directly
+          if (env.plainData) {
+            this.memoryData = env.plainData;
+          }
+          this.isUnlocked = true;
+          this.dek = crypto.randomBytes(32);
+          return;
+        }
+
+        if (mode === 'system' && env.systemWrappedDek) {
+          // System DPAPI mode: transparently unwrap DEK and decrypt payload
+          const unwrappedDek = this.unwrapWithSafeStorage(env.systemWrappedDek);
+          if (unwrappedDek && env.payloadIv && env.payloadTag && env.payloadCiphertext) {
+            this.dek = unwrappedDek;
+            const payloadDecipher = crypto.createDecipheriv(
+              'aes-256-gcm',
+              this.dek,
+              Buffer.from(env.payloadIv, 'hex')
+            );
+            payloadDecipher.setAuthTag(Buffer.from(env.payloadTag, 'hex'));
+            let decrypted = payloadDecipher.update(Buffer.from(env.payloadCiphertext, 'hex'), undefined, 'utf8');
+            decrypted += payloadDecipher.final('utf8');
+
+            this.memoryData = JSON.parse(decrypted);
+            this.isUnlocked = true;
+            return;
+          }
+        }
+
+        // Backward compatibility for earlier v2 format with unprotectedWrappedDek
+        if (!env.isMasterPasswordSet && env.unprotectedWrappedDek && !env.systemWrappedDek) {
           const defaultKey = this.getDefaultKey();
           const decipher = crypto.createDecipheriv(
             'aes-256-gcm',
@@ -138,26 +233,34 @@ export class VaultManager {
             decipher.final(),
           ]);
 
-          this.dek = dek;
-          // Decrypt payload
-          const payloadDecipher = crypto.createDecipheriv(
-            'aes-256-gcm',
-            dek,
-            Buffer.from(env.payloadIv, 'hex')
-          );
-          payloadDecipher.setAuthTag(Buffer.from(env.payloadTag, 'hex'));
-          let decrypted = payloadDecipher.update(Buffer.from(env.payloadCiphertext, 'hex'), undefined, 'utf8');
-          decrypted += payloadDecipher.final('utf8');
+          if (env.payloadIv && env.payloadTag && env.payloadCiphertext) {
+            const payloadDecipher = crypto.createDecipheriv('aes-256-gcm', dek, Buffer.from(env.payloadIv, 'hex'));
+            payloadDecipher.setAuthTag(Buffer.from(env.payloadTag, 'hex'));
+            let decrypted = payloadDecipher.update(Buffer.from(env.payloadCiphertext, 'hex'), undefined, 'utf8');
+            decrypted += payloadDecipher.final('utf8');
 
-          this.memoryData = JSON.parse(decrypted);
-          this.isUnlocked = true;
-        } else {
-          // Master password is configured: vault stays locked until unlock() is called
-          this.isUnlocked = false;
+            this.memoryData = JSON.parse(decrypted);
+            this.dek = dek;
+            this.isUnlocked = true;
+            this.protectionMode = 'system';
+            // Upgrade to system DPAPI envelope
+            this.save();
+            return;
+          }
         }
+
+        // If mode === 'password': keep locked until unlock() or unlockWithBiometrics() is called
+        this.isUnlocked = false;
+        this.memoryData = {
+          version: 2,
+          isMasterPasswordSet: true,
+          hosts: [],
+          snippets: DEFAULT_SNIPPETS,
+          tunnels: [],
+          settings: DEFAULT_SETTINGS,
+        };
       } else {
-        // v1 legacy binary format: [16b Salt][12b IV][16b AuthTag][Ciphertext...]
-        // Attempt decrypting with fallback key
+        // Legacy v1 binary format: attempt decrypting with fallback key
         try {
           const salt = raw.subarray(0, 16);
           const iv = raw.subarray(16, 28);
@@ -180,122 +283,266 @@ export class VaultManager {
             settings: data.settings || DEFAULT_SETTINGS,
           };
           this.isMasterPasswordSet = false;
+          this.protectionMode = 'system';
           this.isUnlocked = true;
           this.dek = crypto.randomBytes(32);
-          // Upgrade to v2 format
           this.save();
         } catch {
-          // Fallback failed, meaning it was locked with an actual user password in v1
           this.isMasterPasswordSet = true;
+          this.protectionMode = 'password';
           this.isUnlocked = false;
         }
       }
     } catch (err) {
       console.error('Failed to init vault from disk:', err);
       this.isMasterPasswordSet = false;
+      this.protectionMode = 'system';
       this.isUnlocked = true;
       this.dek = crypto.randomBytes(32);
     }
   }
 
   public isVaultConfigured(): boolean {
-    return this.isMasterPasswordSet;
+    return this.protectionMode === 'password' ? this.isMasterPasswordSet : true;
   }
 
-  public getStatus() {
+  public getStatus(): VaultStatus {
     return {
       isConfigured: this.isVaultConfigured(),
       isUnlocked: this.isUnlocked,
+      protectionMode: this.protectionMode,
+      biometricsAvailable: this.biometricsAvailable,
+      biometricsEnabled: Boolean(this.envelope?.useBiometrics && this.envelope?.biometricWrappedDek),
+      biometricsStatus: this.biometricsStatus,
     };
   }
 
-  public setupMasterPassword(password: string, recoveryKey: string): { success: boolean; error?: string } {
+  public async setupMasterPassword(password: string, recoveryKey: string): Promise<{ success: boolean; error?: string }> {
+    return this.setProtectionMode('password', password, recoveryKey);
+  }
+
+  public async setProtectionMode(
+    newMode: VaultProtectionMode,
+    password?: string,
+    recoveryKey?: string
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!password || password.length < 1) {
-        return { success: false, error: 'Password cannot be empty' };
-      }
-      if (!recoveryKey || recoveryKey.length < 4) {
-        return { success: false, error: 'Recovery key cannot be empty' };
+      if (!this.isUnlocked) {
+        return { success: false, error: 'Vault is currently locked. Please unlock it before changing protection mode.' };
       }
 
-      const normalizedRecovery = normalizeRecoveryKey(recoveryKey);
       if (!this.dek) {
         this.dek = crypto.randomBytes(32);
       }
 
-      // Derive Password KEK
-      const passwordSalt = crypto.randomBytes(16);
-      const passwordKek = this.deriveKey(password, passwordSalt);
+      if (newMode === 'password') {
+        if (!password || password.length < 1) {
+          return { success: false, error: 'Password cannot be empty' };
+        }
+        if (!recoveryKey || recoveryKey.length < 4) {
+          return { success: false, error: 'Recovery key cannot be empty' };
+        }
 
-      // Wrap DEK with passwordKek
-      const pwdIv = crypto.randomBytes(12);
-      const pwdCipher = crypto.createCipheriv('aes-256-gcm', passwordKek, pwdIv);
-      const pwdCiphertext = Buffer.concat([pwdCipher.update(this.dek), pwdCipher.final()]);
-      const pwdTag = pwdCipher.getAuthTag();
+        const normalizedRecovery = normalizeRecoveryKey(recoveryKey);
+        const passwordSalt = crypto.randomBytes(16);
+        const passwordKek = this.deriveKey(password, passwordSalt);
 
-      // Derive Recovery Key KEK
-      const recoverySalt = crypto.randomBytes(16);
-      const recoveryKek = this.deriveKey(normalizedRecovery, recoverySalt);
-      const recoveryKeyHash = crypto.createHash('sha256').update(normalizedRecovery).digest('hex');
+        const pwdIv = crypto.randomBytes(12);
+        const pwdCipher = crypto.createCipheriv('aes-256-gcm', passwordKek, pwdIv);
+        const pwdCiphertext = Buffer.concat([pwdCipher.update(this.dek), pwdCipher.final()]);
+        const pwdTag = pwdCipher.getAuthTag();
 
-      // Wrap DEK with recoveryKek
-      const recIv = crypto.randomBytes(12);
-      const recCipher = crypto.createCipheriv('aes-256-gcm', recoveryKek, recIv);
-      const recCiphertext = Buffer.concat([recCipher.update(this.dek), recCipher.final()]);
-      const recTag = recCipher.getAuthTag();
+        const recoverySalt = crypto.randomBytes(16);
+        const recoveryKek = this.deriveKey(normalizedRecovery, recoverySalt);
+        const recoveryKeyHash = crypto.createHash('sha256').update(normalizedRecovery).digest('hex');
 
-      // Encrypt Memory Data with DEK
-      const payloadIv = crypto.randomBytes(12);
-      const payloadCipher = crypto.createCipheriv('aes-256-gcm', this.dek, payloadIv);
-      const dataStr = JSON.stringify(this.memoryData);
-      const payloadCiphertext = Buffer.concat([payloadCipher.update(dataStr, 'utf8'), payloadCipher.final()]);
-      const payloadTag = payloadCipher.getAuthTag();
+        const recIv = crypto.randomBytes(12);
+        const recCipher = crypto.createCipheriv('aes-256-gcm', recoveryKek, recIv);
+        const recCiphertext = Buffer.concat([recCipher.update(this.dek), recCipher.final()]);
+        const recTag = recCipher.getAuthTag();
 
-      const newEnvelope: VaultEnvelope = {
-        format: 'bestty-v2',
-        isMasterPasswordSet: true,
-        passwordSalt: passwordSalt.toString('hex'),
-        passwordWrappedDek: {
-          iv: pwdIv.toString('hex'),
-          tag: pwdTag.toString('hex'),
-          ciphertext: pwdCiphertext.toString('hex'),
-        },
-        recoverySalt: recoverySalt.toString('hex'),
-        recoveryKeyHash,
-        recoveryWrappedDek: {
-          iv: recIv.toString('hex'),
-          tag: recTag.toString('hex'),
-          ciphertext: recCiphertext.toString('hex'),
-        },
-        payloadIv: payloadIv.toString('hex'),
-        payloadTag: payloadTag.toString('hex'),
-        payloadCiphertext: payloadCiphertext.toString('hex'),
-      };
+        // Biometric wrapped DEK if biometrics is enabled and safeStorage is available
+        const biometricWrappedDek = this.wrapWithSafeStorage(this.dek) || undefined;
 
-      this.envelope = newEnvelope;
-      this.isMasterPasswordSet = true;
-      this.isUnlocked = true;
-      fs.writeFileSync(this.vaultPath, JSON.stringify(newEnvelope, null, 2), 'utf8');
-      return { success: true };
+        const payloadIv = crypto.randomBytes(12);
+        const payloadCipher = crypto.createCipheriv('aes-256-gcm', this.dek, payloadIv);
+        const dataStr = JSON.stringify(this.memoryData);
+        const payloadCiphertext = Buffer.concat([payloadCipher.update(dataStr, 'utf8'), payloadCipher.final()]);
+        const payloadTag = payloadCipher.getAuthTag();
+
+        const newEnvelope: VaultEnvelope = {
+          format: 'bestty-v2',
+          protectionMode: 'password',
+          isMasterPasswordSet: true,
+          useBiometrics: Boolean(this.biometricsAvailable && biometricWrappedDek),
+          passwordSalt: passwordSalt.toString('hex'),
+          passwordWrappedDek: {
+            iv: pwdIv.toString('hex'),
+            tag: pwdTag.toString('hex'),
+            ciphertext: pwdCiphertext.toString('hex'),
+          },
+          recoverySalt: recoverySalt.toString('hex'),
+          recoveryKeyHash,
+          recoveryWrappedDek: {
+            iv: recIv.toString('hex'),
+            tag: recTag.toString('hex'),
+            ciphertext: recCiphertext.toString('hex'),
+          },
+          biometricWrappedDek,
+          payloadIv: payloadIv.toString('hex'),
+          payloadTag: payloadTag.toString('hex'),
+          payloadCiphertext: payloadCiphertext.toString('hex'),
+        };
+
+        this.envelope = newEnvelope;
+        this.protectionMode = 'password';
+        this.isMasterPasswordSet = true;
+        this.isUnlocked = true;
+        this.writeVaultFile(newEnvelope);
+        return { success: true };
+      }
+
+      if (newMode === 'system') {
+        const systemWrappedDek = this.wrapWithSafeStorage(this.dek);
+        const payloadIv = crypto.randomBytes(12);
+        const payloadCipher = crypto.createCipheriv('aes-256-gcm', this.dek, payloadIv);
+        const dataStr = JSON.stringify(this.memoryData);
+        const payloadCiphertext = Buffer.concat([payloadCipher.update(dataStr, 'utf8'), payloadCipher.final()]);
+        const payloadTag = payloadCipher.getAuthTag();
+
+        const newEnvelope: VaultEnvelope = {
+          format: 'bestty-v2',
+          protectionMode: 'system',
+          isMasterPasswordSet: false,
+          useBiometrics: this.biometricsAvailable,
+          systemWrappedDek: systemWrappedDek || undefined,
+          payloadIv: payloadIv.toString('hex'),
+          payloadTag: payloadTag.toString('hex'),
+          payloadCiphertext: payloadCiphertext.toString('hex'),
+        };
+
+        // Fallback for systems without safeStorage
+        if (!systemWrappedDek) {
+          const defaultKey = this.getDefaultKey();
+          const unprotIv = crypto.randomBytes(12);
+          const unprotCipher = crypto.createCipheriv('aes-256-gcm', defaultKey, unprotIv);
+          const unprotCiphertext = Buffer.concat([unprotCipher.update(this.dek), unprotCipher.final()]);
+          newEnvelope.unprotectedWrappedDek = {
+            iv: unprotIv.toString('hex'),
+            tag: unprotCipher.getAuthTag().toString('hex'),
+            ciphertext: unprotCiphertext.toString('hex'),
+          };
+        }
+
+        this.envelope = newEnvelope;
+        this.protectionMode = 'system';
+        this.isMasterPasswordSet = false;
+        this.isUnlocked = true;
+        this.writeVaultFile(newEnvelope);
+        return { success: true };
+      }
+
+      if (newMode === 'plain') {
+        const newEnvelope: VaultEnvelope = {
+          format: 'bestty-v2',
+          protectionMode: 'plain',
+          isMasterPasswordSet: false,
+          plainData: this.memoryData,
+        };
+
+        this.envelope = newEnvelope;
+        this.protectionMode = 'plain';
+        this.isMasterPasswordSet = false;
+        this.isUnlocked = true;
+        this.writeVaultFile(newEnvelope);
+        return { success: true };
+      }
+
+      return { success: false, error: 'Unknown protection mode' };
     } catch (err: any) {
-      console.error('Failed to setup master password:', err);
-      return { success: false, error: err.message || 'Failed to setup master password' };
+      console.error('Failed to set protection mode:', err);
+      return { success: false, error: err.message || 'Failed to switch protection mode' };
     }
   }
 
-  public recoverWithKey(recoveryKey: string, newPassword: string): { success: boolean; error?: string } {
+  public async toggleBiometrics(enabled: boolean): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!this.envelope) {
+        return { success: false, error: 'Vault envelope not loaded' };
+      }
+
+      if (enabled) {
+        if (!this.dek) {
+          return { success: false, error: 'Vault must be unlocked to configure biometrics' };
+        }
+        const wrapped = this.wrapWithSafeStorage(this.dek);
+        if (!wrapped) {
+          return { success: false, error: 'System secure storage (DPAPI) is not available' };
+        }
+        this.envelope.useBiometrics = true;
+        this.envelope.biometricWrappedDek = wrapped;
+      } else {
+        this.envelope.useBiometrics = false;
+        delete this.envelope.biometricWrappedDek;
+      }
+
+      this.writeVaultFile(this.envelope);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to toggle biometrics' };
+    }
+  }
+
+  public async unlockWithBiometrics(): Promise<boolean> {
+    if (!fs.existsSync(this.vaultPath)) {
+      return false;
+    }
+
+    try {
+      const raw = fs.readFileSync(this.vaultPath);
+      const env = JSON.parse(raw.toString('utf8')) as VaultEnvelope;
+
+      // In system mode, biometrics verification can be requested for extra assurance
+      let wrappedHex = env.biometricWrappedDek || env.systemWrappedDek;
+      if (!wrappedHex) {
+        return false;
+      }
+
+      // Prompt Windows Hello / Biometrics
+      const verifyResult = await this.biometricService.promptVerification('Подтвердите вход в BesTTY');
+      if (!verifyResult.success) {
+        return false;
+      }
+
+      const unwrappedDek = this.unwrapWithSafeStorage(wrappedHex);
+      if (!unwrappedDek || !env.payloadIv || !env.payloadTag || !env.payloadCiphertext) {
+        return false;
+      }
+
+      const payloadDecipher = crypto.createDecipheriv('aes-256-gcm', unwrappedDek, Buffer.from(env.payloadIv, 'hex'));
+      payloadDecipher.setAuthTag(Buffer.from(env.payloadTag, 'hex'));
+      let decrypted = payloadDecipher.update(Buffer.from(env.payloadCiphertext, 'hex'), undefined, 'utf8');
+      decrypted += payloadDecipher.final('utf8');
+
+      this.memoryData = JSON.parse(decrypted);
+      this.dek = unwrappedDek;
+      this.envelope = env;
+      this.isUnlocked = true;
+      return true;
+    } catch (err) {
+      console.error('Biometric unlock failed:', err);
+      return false;
+    }
+  }
+
+  public async recoverWithKey(recoveryKey: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
     try {
       if (!fs.existsSync(this.vaultPath)) {
         return { success: false, error: 'Vault file not found' };
       }
 
       const raw = fs.readFileSync(this.vaultPath);
-      let env: VaultEnvelope;
-      try {
-        env = JSON.parse(raw.toString('utf8')) as VaultEnvelope;
-      } catch {
-        return { success: false, error: 'Legacy vault format does not support key recovery' };
-      }
+      const env = JSON.parse(raw.toString('utf8')) as VaultEnvelope;
 
       if (!env.recoveryWrappedDek || !env.recoverySalt || !env.recoveryKeyHash) {
         return { success: false, error: 'No recovery key registered for this vault' };
@@ -308,7 +555,6 @@ export class VaultManager {
         return { success: false, error: 'Invalid recovery phrase or key' };
       }
 
-      // Derive recovery KEK
       const recoveryKek = this.deriveKey(normalizedRecovery, Buffer.from(env.recoverySalt, 'hex'));
       const decipher = crypto.createDecipheriv(
         'aes-256-gcm',
@@ -321,12 +567,11 @@ export class VaultManager {
         decipher.final(),
       ]);
 
-      // Verify payload decryption with unwrapped DEK
-      const payloadDecipher = crypto.createDecipheriv(
-        'aes-256-gcm',
-        dek,
-        Buffer.from(env.payloadIv, 'hex')
-      );
+      if (!env.payloadIv || !env.payloadTag || !env.payloadCiphertext) {
+        return { success: false, error: 'Corrupt vault payload' };
+      }
+
+      const payloadDecipher = crypto.createDecipheriv('aes-256-gcm', dek, Buffer.from(env.payloadIv, 'hex'));
       payloadDecipher.setAuthTag(Buffer.from(env.payloadTag, 'hex'));
       let decrypted = payloadDecipher.update(Buffer.from(env.payloadCiphertext, 'hex'), undefined, 'utf8');
       decrypted += payloadDecipher.final('utf8');
@@ -335,27 +580,31 @@ export class VaultManager {
       this.dek = dek;
       this.isUnlocked = true;
 
-      // Re-setup with the new password and preserve recovery key
-      return this.setupMasterPassword(newPassword, recoveryKey);
+      // Re-setup with the new password
+      return await this.setupMasterPassword(newPassword, recoveryKey);
     } catch (err: any) {
       console.error('Failed to recover vault with key:', err);
       return { success: false, error: err.message || 'Recovery failed' };
     }
   }
 
-  public unlock(password: string): boolean {
+  public async unlock(password: string): Promise<boolean> {
     if (!fs.existsSync(this.vaultPath)) {
-      // First-time setup: initialize with default recovery key
-      const result = this.setupMasterPassword(password, 'BEST-DEFAULT-RECOVERY-KEY');
+      const result = await this.setupMasterPassword(password, 'BEST-DEFAULT-RECOVERY-KEY');
       return result.success;
     }
 
     try {
       const raw = fs.readFileSync(this.vaultPath);
       if (raw.length > 0 && raw[0] === 0x7B) {
-        // v2 envelope
         const env = JSON.parse(raw.toString('utf8')) as VaultEnvelope;
-        if (!env.isMasterPasswordSet) {
+        if (env.protectionMode === 'plain') {
+          this.memoryData = env.plainData || this.memoryData;
+          this.isUnlocked = true;
+          return true;
+        }
+
+        if (!env.isMasterPasswordSet && env.protectionMode === 'system') {
           this.isUnlocked = true;
           return true;
         }
@@ -378,11 +627,11 @@ export class VaultManager {
           decipher.final(),
         ]);
 
-        const payloadDecipher = crypto.createDecipheriv(
-          'aes-256-gcm',
-          dek,
-          Buffer.from(env.payloadIv, 'hex')
-        );
+        if (!env.payloadIv || !env.payloadTag || !env.payloadCiphertext) {
+          return false;
+        }
+
+        const payloadDecipher = crypto.createDecipheriv('aes-256-gcm', dek, Buffer.from(env.payloadIv, 'hex'));
         payloadDecipher.setAuthTag(Buffer.from(env.payloadTag, 'hex'));
         let decrypted = payloadDecipher.update(Buffer.from(env.payloadCiphertext, 'hex'), undefined, 'utf8');
         decrypted += payloadDecipher.final('utf8');
@@ -392,36 +641,32 @@ export class VaultManager {
         this.envelope = env;
         this.isUnlocked = true;
         return true;
-      } else {
-        // Legacy v1 binary format
-        const salt = raw.subarray(0, 16);
-        const iv = raw.subarray(16, 28);
-        const tag = raw.subarray(28, 44);
-        const ciphertext = raw.subarray(44);
-
-        const key = this.deriveKey(password, salt);
-        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-        decipher.setAuthTag(tag);
-
-        let decrypted = decipher.update(ciphertext, undefined, 'utf8');
-        decrypted += decipher.final('utf8');
-
-        this.memoryData = JSON.parse(decrypted);
-        this.isMasterPasswordSet = true;
-        this.isUnlocked = true;
-        this.dek = crypto.randomBytes(32);
-        // Upgrade to v2 format
-        this.setupMasterPassword(password, 'BEST-UPGRADED-VAULT-RECOVERY');
-        return true;
       }
+      return false;
     } catch (err) {
       console.error('Failed to unlock vault:', err);
       return false;
     }
   }
 
+  private writeVaultFile(env: VaultEnvelope): void {
+    fs.writeFileSync(this.vaultPath, JSON.stringify(env, null, 2), { encoding: 'utf8', mode: 0o600 });
+  }
+
   public save(): boolean {
     try {
+      if (this.protectionMode === 'plain') {
+        const plainEnv: VaultEnvelope = {
+          format: 'bestty-v2',
+          protectionMode: 'plain',
+          isMasterPasswordSet: false,
+          plainData: this.memoryData,
+        };
+        this.envelope = plainEnv;
+        this.writeVaultFile(plainEnv);
+        return true;
+      }
+
       if (!this.dek) {
         this.dek = crypto.randomBytes(32);
       }
@@ -432,8 +677,7 @@ export class VaultManager {
       const payloadCiphertext = Buffer.concat([payloadCipher.update(dataStr, 'utf8'), payloadCipher.final()]);
       const payloadTag = payloadCipher.getAuthTag();
 
-      if (this.isMasterPasswordSet && this.envelope) {
-        // Vault has master password: keep existing wrapped DEKs, update payload
+      if (this.protectionMode === 'password' && this.envelope) {
         const updatedEnvelope: VaultEnvelope = {
           ...this.envelope,
           payloadIv: payloadIv.toString('hex'),
@@ -441,32 +685,41 @@ export class VaultManager {
           payloadCiphertext: payloadCiphertext.toString('hex'),
         };
         this.envelope = updatedEnvelope;
-        fs.writeFileSync(this.vaultPath, JSON.stringify(updatedEnvelope, null, 2), 'utf8');
+        this.writeVaultFile(updatedEnvelope);
         return true;
       }
 
-      // Unprotected mode (no master password set yet)
-      const defaultKey = this.getDefaultKey();
-      const unprotIv = crypto.randomBytes(12);
-      const unprotCipher = crypto.createCipheriv('aes-256-gcm', defaultKey, unprotIv);
-      const unprotCiphertext = Buffer.concat([unprotCipher.update(this.dek), unprotCipher.final()]);
-      const unprotTag = unprotCipher.getAuthTag();
+      // Default: System DPAPI mode
+      let systemWrappedDek = this.envelope?.systemWrappedDek;
+      if (!systemWrappedDek) {
+        systemWrappedDek = this.wrapWithSafeStorage(this.dek) || undefined;
+      }
 
       const newEnvelope: VaultEnvelope = {
         format: 'bestty-v2',
+        protectionMode: 'system',
         isMasterPasswordSet: false,
-        unprotectedWrappedDek: {
-          iv: unprotIv.toString('hex'),
-          tag: unprotTag.toString('hex'),
-          ciphertext: unprotCiphertext.toString('hex'),
-        },
+        useBiometrics: this.biometricsAvailable,
+        systemWrappedDek,
         payloadIv: payloadIv.toString('hex'),
         payloadTag: payloadTag.toString('hex'),
         payloadCiphertext: payloadCiphertext.toString('hex'),
       };
 
+      if (!systemWrappedDek) {
+        const defaultKey = this.getDefaultKey();
+        const unprotIv = crypto.randomBytes(12);
+        const unprotCipher = crypto.createCipheriv('aes-256-gcm', defaultKey, unprotIv);
+        const unprotCiphertext = Buffer.concat([unprotCipher.update(this.dek), unprotCipher.final()]);
+        newEnvelope.unprotectedWrappedDek = {
+          iv: unprotIv.toString('hex'),
+          tag: unprotCipher.getAuthTag().toString('hex'),
+          ciphertext: unprotCiphertext.toString('hex'),
+        };
+      }
+
       this.envelope = newEnvelope;
-      fs.writeFileSync(this.vaultPath, JSON.stringify(newEnvelope, null, 2), 'utf8');
+      this.writeVaultFile(newEnvelope);
       return true;
     } catch (err) {
       console.error('Failed to save vault:', err);
@@ -475,10 +728,9 @@ export class VaultManager {
   }
 
   public lock(): void {
-    if (this.isMasterPasswordSet) {
+    if (this.protectionMode === 'password') {
       this.isUnlocked = false;
       this.dek = null;
-      // Security: Flush plaintext credentials, passwords and keys from RAM
       this.memoryData = {
         version: 2,
         isMasterPasswordSet: true,

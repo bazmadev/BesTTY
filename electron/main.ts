@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, clipboard, shell } from 'electron'
 import path from 'path';
 import fs from 'fs';
 import { VaultManager } from './vault/VaultManager';
+import { BiometricService } from './biometrics/BiometricService';
 import { SSHClientManager } from './ssh/SSHClientManager';
 import { SFTPManager } from './ssh/SFTPManager';
 import { MonitorService } from './ssh/MonitorService';
@@ -10,7 +11,8 @@ import { AutoUpdaterManager } from './updater/AutoUpdaterManager';
 
 let mainWindow: BrowserWindow | null = null;
 
-const vault = new VaultManager();
+const biometricService = new BiometricService();
+const vault = new VaultManager(biometricService);
 const sshManager = new SSHClientManager();
 const sftpManager = new SFTPManager(sshManager);
 const monitorService = new MonitorService(sshManager);
@@ -138,11 +140,18 @@ function registerIpcHandlers() {
   // Vault
   ipcMain.handle('vault:getStatus', () => vault.getStatus());
   ipcMain.handle('vault:unlock', (_, password: string) => vault.unlock(password));
+  ipcMain.handle('vault:unlockWithBiometrics', () => vault.unlockWithBiometrics());
   ipcMain.handle('vault:setupMasterPassword', (_, password: string, recoveryKey: string) =>
     vault.setupMasterPassword(password, recoveryKey)
   );
   ipcMain.handle('vault:recoverWithKey', (_, recoveryKey: string, newPassword: string) =>
     vault.recoverWithKey(recoveryKey, newPassword)
+  );
+  ipcMain.handle('vault:setProtectionMode', (_, mode, password, recoveryKey) =>
+    vault.setProtectionMode(mode, password, recoveryKey)
+  );
+  ipcMain.handle('vault:toggleBiometrics', (_, enabled: boolean) =>
+    vault.toggleBiometrics(enabled)
   );
   ipcMain.handle('vault:lock', () => vault.lock());
   ipcMain.handle('vault:getHosts', () => vault.getHosts());
@@ -156,6 +165,10 @@ function registerIpcHandlers() {
   ipcMain.handle('vault:deleteTunnel', (_, id) => vault.deleteTunnel(id));
   ipcMain.handle('vault:getSettings', () => vault.getSettings());
   ipcMain.handle('vault:saveSettings', (_, settings) => vault.saveSettings(settings));
+
+  // Biometrics
+  ipcMain.handle('biometrics:checkAvailability', () => biometricService.checkAvailability());
+  ipcMain.handle('biometrics:promptVerification', (_, prompt) => biometricService.promptVerification(prompt));
 
   // SSH
   ipcMain.handle('ssh:connect', async (_, sessionId, host, cols, rows) => {
@@ -256,7 +269,8 @@ function registerIpcHandlers() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await vault.init();
   registerIpcHandlers();
   createWindow();
 
