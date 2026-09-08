@@ -108,6 +108,7 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
   };
 
   const editorRef = useRef<any>(null);
+  const isSudoRequiredRef = useRef<boolean>(false);
 
   const handleSave = async (useSudo: boolean = false, customSudoPass?: string) => {
     // Read the most up-to-date value from the editor instance if available
@@ -115,22 +116,42 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
     setIsSaving(true);
     setSaveMessage(null);
     try {
-      if (useSudo) {
+      const shouldElevate = useSudo || isSudoRequiredRef.current;
+      if (shouldElevate) {
         const passToUse = customSudoPass ?? sessionSudoPasswordRef.current;
         await window.api.sftp.sudoWriteFile(sessionId, filePath, activeVal, passToUse);
         if (customSudoPass) {
           sessionSudoPasswordRef.current = customSudoPass;
         }
+        isSudoRequiredRef.current = true;
         setShowSudoPrompt(false);
       } else {
-        await window.api.sftp.writeFile(sessionId, filePath, activeVal);
+        try {
+          await window.api.sftp.writeFile(sessionId, filePath, activeVal);
+        } catch (writeErr: any) {
+          const writeErrMsg = writeErr?.message || String(writeErr);
+          // Auto-elevate to sudo save seamlessly if regular write gets Permission denied!
+          if (writeErrMsg.includes('Permission denied')) {
+            isSudoRequiredRef.current = true;
+            const passToUse = customSudoPass ?? sessionSudoPasswordRef.current;
+            await window.api.sftp.sudoWriteFile(sessionId, filePath, activeVal, passToUse);
+            if (customSudoPass) {
+              sessionSudoPasswordRef.current = customSudoPass;
+            }
+            setShowSudoPrompt(false);
+          } else {
+            throw writeErr;
+          }
+        }
       }
       setOriginalContent(activeVal);
       setContent(activeVal);
       setIsDirty(false);
       onModifiedChange?.(false);
       setSaveMessage({
-        text: useSudo ? `${t('editor.savedSuccess')} (Sudo)` : t('editor.savedSuccess'),
+        text: (useSudo || isSudoRequiredRef.current)
+          ? `${t('editor.savedSuccess')} (Sudo)`
+          : t('editor.savedSuccess'),
         type: 'success',
       });
       setTimeout(() => setSaveMessage(null), 3000);
@@ -142,14 +163,9 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
           text: t('editor.sudoPasswordPromptTitle') || 'Требуется пароль sudo',
           type: 'error',
         });
-      } else if (!useSudo && errMsg.includes('Permission denied')) {
-        setSaveMessage({
-          text: `${t('editor.permissionDenied') || 'Доступ запрещен'}. ${t('editor.trySudoSaveTip') || 'Нажмите "Sudo Сохранение"'}.`,
-          type: 'error',
-        });
       } else {
         setSaveMessage({
-          text: useSudo ? `Sudo Save error: ${errMsg}` : `Save error: ${errMsg}`,
+          text: (useSudo || isSudoRequiredRef.current) ? `Sudo Save error: ${errMsg}` : `Save error: ${errMsg}`,
           type: 'error',
         });
       }
