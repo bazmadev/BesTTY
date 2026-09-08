@@ -12,7 +12,8 @@ import { useTranslation } from '../i18n';
 import { sanitizeRemotePath, formatCdCommand } from '../utils/pathUtils';
 import { 
   FolderTree, Activity, Search, X, Broom, RefreshCw,
-  RotateCw, ArrowLeftRight, Code, ChevronDown, Play, AlertCircle
+  RotateCw, ArrowLeftRight, Code, ChevronDown, Play, AlertCircle,
+  ClipboardPaste
 } from 'lucide-react';
 
 import { TerminalAutocomplete, SuggestionItem, computeSuggestions } from './terminal/TerminalAutocomplete';
@@ -20,6 +21,7 @@ import { TerminalDropOverlay } from './terminal/TerminalDropOverlay';
 import { TerminalMiniMonitor } from './terminal/TerminalMiniMonitor';
 import { TerminalBreadcrumbs } from './terminal/TerminalBreadcrumbs';
 import { TerminalSftpSidebar } from './terminal/TerminalSftpSidebar';
+import { TerminalContextMenu } from './terminal/TerminalContextMenu';
 
 export type { SuggestionItem };
 
@@ -78,6 +80,54 @@ const getInitialLayoutConfig = (): TerminalLayoutConfig => {
   };
 };
 
+const DARK_TERMINAL_THEME = {
+  background: '#181818',
+  foreground: '#e6edf3',
+  cursor: '#60cdff',
+  cursorAccent: '#181818',
+  selectionBackground: 'rgba(96, 205, 255, 0.3)',
+  black: '#181818',
+  red: '#ff7b72',
+  green: '#7ee787',
+  yellow: '#f2cc60',
+  blue: '#58a6ff',
+  magenta: '#bc8cff',
+  cyan: '#39c5cf',
+  white: '#d2a8ff',
+  brightBlack: '#6e7681',
+  brightRed: '#ffa198',
+  brightGreen: '#56d364',
+  brightYellow: '#e3b341',
+  brightBlue: '#79c0ff',
+  brightMagenta: '#d2a8ff',
+  brightCyan: '#56d4dd',
+  brightWhite: '#f0f6fc',
+};
+
+const LIGHT_TERMINAL_THEME = {
+  background: '#ffffff',
+  foreground: '#24292f',
+  cursor: '#0969da',
+  cursorAccent: '#ffffff',
+  selectionBackground: 'rgba(9, 105, 218, 0.25)',
+  black: '#24292f',
+  red: '#cf222e',
+  green: '#116329',
+  yellow: '#4d2d00',
+  blue: '#0969da',
+  magenta: '#8250df',
+  cyan: '#1b7c83',
+  white: '#6e7781',
+  brightBlack: '#57606a',
+  brightRed: '#a40e26',
+  brightGreen: '#1a7f37',
+  brightYellow: '#633c01',
+  brightBlue: '#218bff',
+  brightMagenta: '#a475f9',
+  brightCyan: '#3192aa',
+  brightWhite: '#8c959f',
+};
+
 export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
   sessionId,
   host,
@@ -88,6 +138,7 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
   onOpenSftp,
   onOpenMonitor,
   onOpenFileInEditor,
+  onDuplicateSession,
   onReconnectSession,
 }) => {
   const { t } = useTranslation();
@@ -225,64 +276,140 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     } catch {}
   }, [sftpSidebarWidth, monitorSidebarWidth, showSftpSidebar, showMonitorSidebar, sftpPosition, monitorPosition]);
 
-  // Terminal Setup & Connection
+  const isLightRef = useRef(isLight);
+  isLightRef.current = isLight;
+
+  // Clipboard Helpers
+  const readClipboardText = useCallback(async (): Promise<string> => {
+    try {
+      if (window.api?.clipboard?.readText) {
+        return await window.api.clipboard.readText();
+      }
+      if (navigator.clipboard?.readText) {
+        return await navigator.clipboard.readText();
+      }
+    } catch (err) {
+      console.warn('Failed to read clipboard:', err);
+    }
+    return '';
+  }, []);
+
+  const writeClipboardText = useCallback(async (text: string): Promise<boolean> => {
+    try {
+      if (window.api?.clipboard?.writeText) {
+        await window.api.clipboard.writeText(text);
+        return true;
+      }
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (err) {
+      console.warn('Failed to write clipboard:', err);
+    }
+    return false;
+  }, []);
+
+  const handlePasteFromClipboard = useCallback(async () => {
+    const text = await readClipboardText();
+    if (text) {
+      if (window.api?.ssh && isConnectedRef.current) {
+        window.api.ssh.write(sessionId, text);
+      }
+      xtermInstance.current?.scrollToBottom();
+      xtermInstance.current?.focus();
+    }
+  }, [sessionId, readClipboardText]);
+
+  const handleCopySelection = useCallback(async () => {
+    if (xtermInstance.current?.hasSelection()) {
+      const sel = xtermInstance.current.getSelection();
+      if (sel) {
+        await writeClipboardText(sel);
+        xtermInstance.current.clearSelection();
+      }
+    }
+  }, [writeClipboardText]);
+
+  const handleSelectAll = useCallback(() => {
+    xtermInstance.current?.selectAll();
+  }, []);
+
+  const handleResetTerminal = useCallback(() => {
+    if (xtermInstance.current) {
+      xtermInstance.current.reset();
+      try {
+        fitAddonRef.current?.fit();
+        if (xtermInstance.current.cols > 10 && xtermInstance.current.rows > 4 && window.api?.ssh) {
+          window.api.ssh.resize(sessionId, xtermInstance.current.cols, xtermInstance.current.rows);
+        }
+      } catch (e) {}
+    }
+  }, [sessionId]);
+
+  // Close context menu on outside click
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    window.addEventListener('click', handleClickOutside);
+    return () => {
+      window.removeEventListener('click', handleClickOutside);
+    };
+  }, []);
+
+  // Listen for native capture-phase contextmenu on terminal canvas
+  useEffect(() => {
+    const el = terminalRef.current;
+    if (!el) return;
+    const handleNativeContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({ x: e.clientX, y: e.clientY });
+    };
+    el.addEventListener('contextmenu', handleNativeContextMenu, { capture: true });
+    return () => {
+      el.removeEventListener('contextmenu', handleNativeContextMenu, { capture: true });
+    };
+  }, []);
+
+  // Listen for native paste event on terminal container
+  useEffect(() => {
+    const el = terminalRef.current;
+    if (!el) return;
+    const handlePasteEvent = (e: ClipboardEvent) => {
+      e.preventDefault();
+      const text = e.clipboardData?.getData('text');
+      if (text && window.api?.ssh && isConnectedRef.current) {
+        window.api.ssh.write(sessionId, text);
+        xtermInstance.current?.scrollToBottom();
+      }
+    };
+    el.addEventListener('paste', handlePasteEvent);
+    return () => el.removeEventListener('paste', handlePasteEvent);
+  }, [sessionId]);
+
+  // Hot theme switching without disposing xterm or losing scrollback
+  useEffect(() => {
+    isLightRef.current = isLight;
+    if (xtermInstance.current) {
+      xtermInstance.current.options.theme = isLight ? LIGHT_TERMINAL_THEME : DARK_TERMINAL_THEME;
+      requestAnimationFrame(() => {
+        try {
+          fitAddonRef.current?.fit();
+        } catch (e) {}
+      });
+    }
+  }, [isLight]);
+
+  // Terminal Setup & Connection (Created once per sessionId)
   useEffect(() => {
     if (!terminalRef.current) return;
-
-    const darkTheme = {
-      background: '#181818',
-      foreground: '#e6edf3',
-      cursor: '#60cdff',
-      cursorAccent: '#181818',
-      selectionBackground: 'rgba(96, 205, 255, 0.3)',
-      black: '#181818',
-      red: '#ff7b72',
-      green: '#7ee787',
-      yellow: '#f2cc60',
-      blue: '#58a6ff',
-      magenta: '#bc8cff',
-      cyan: '#39c5cf',
-      white: '#d2a8ff',
-      brightBlack: '#6e7681',
-      brightRed: '#ffa198',
-      brightGreen: '#56d364',
-      brightYellow: '#e3b341',
-      brightBlue: '#79c0ff',
-      brightMagenta: '#d2a8ff',
-      brightCyan: '#56d4dd',
-      brightWhite: '#f0f6fc',
-    };
-
-    const lightTheme = {
-      background: '#ffffff',
-      foreground: '#24292f',
-      cursor: '#0969da',
-      cursorAccent: '#ffffff',
-      selectionBackground: 'rgba(9, 105, 218, 0.25)',
-      black: '#24292f',
-      red: '#cf222e',
-      green: '#116329',
-      yellow: '#4d2d00',
-      blue: '#0969da',
-      magenta: '#8250df',
-      cyan: '#1b7c83',
-      white: '#6e7781',
-      brightBlack: '#57606a',
-      brightRed: '#a40e26',
-      brightGreen: '#1a7f37',
-      brightYellow: '#633c01',
-      brightBlue: '#218bff',
-      brightMagenta: '#a475f9',
-      brightCyan: '#3192aa',
-      brightWhite: '#8c959f',
-    };
 
     const term = new XTerm({
       cursorBlink: true,
       cursorStyle: 'bar',
       fontSize: 13,
       fontFamily: "Consolas, 'Cascadia Code', 'Fira Code', Menlo, 'Courier New', monospace",
-      theme: isLight ? lightTheme : darkTheme,
+      theme: isLightRef.current ? LIGHT_TERMINAL_THEME : DARK_TERMINAL_THEME,
       allowTransparency: true,
       smoothScrollDuration: 100,
       scrollback: 5000,
@@ -326,7 +453,7 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
 
-    // Attach custom keyboard shortcut handler for Tab, ArrowDown, ArrowUp, Escape
+    // Attach custom keyboard shortcut handler
     term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
       if (showAutocompleteRef.current && suggestionsRef.current.length > 0) {
         if (event.key === 'Tab') {
@@ -365,12 +492,40 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
         }
       }
 
-      // Clipboard shortcuts (Ctrl+Shift+C / Ctrl+Shift+V or Ctrl+C / Ctrl+V when selection)
-      if (event.ctrlKey && event.shiftKey && event.key === 'C') {
-        if (term.hasSelection()) {
-          navigator.clipboard.writeText(term.getSelection());
-          return false;
+      // Paste: Ctrl+V, Ctrl+Shift+V, Shift+Insert
+      if (
+        (event.ctrlKey && (event.key === 'v' || event.key === 'V')) ||
+        (event.ctrlKey && event.shiftKey && (event.key === 'v' || event.key === 'V')) ||
+        (event.shiftKey && event.key === 'Insert')
+      ) {
+        if (event.type === 'keydown') {
+          handlePasteFromClipboard();
         }
+        return false;
+      }
+
+      // Copy: Ctrl+C (when selection exists), Ctrl+Shift+C, Ctrl+Insert
+      if (
+        (event.ctrlKey && !event.shiftKey && (event.key === 'c' || event.key === 'C') && term.hasSelection()) ||
+        (event.ctrlKey && event.shiftKey && (event.key === 'c' || event.key === 'C')) ||
+        (event.ctrlKey && event.key === 'Insert')
+      ) {
+        if (event.type === 'keydown') {
+          const selection = term.getSelection();
+          if (selection) {
+            writeClipboardText(selection);
+            term.clearSelection();
+          }
+        }
+        return false;
+      }
+
+      // Select All: Ctrl+Shift+A
+      if (event.ctrlKey && event.shiftKey && (event.key === 'a' || event.key === 'A')) {
+        if (event.type === 'keydown') {
+          term.selectAll();
+        }
+        return false;
       }
 
       return true;
@@ -467,7 +622,7 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
       term.dispose();
       xtermInstance.current = null;
     };
-  }, [sessionId, isLight]);
+  }, [sessionId]);
 
   // Immediate fit and focus when tab becomes active / visible
   useEffect(() => {
@@ -941,10 +1096,21 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
                 </div>
               )}
 
+              {/* Quick Paste from clipboard */}
+              <button
+                onClick={handlePasteFromClipboard}
+                className={`p-1 rounded transition-colors cursor-pointer ${
+                  isLight ? 'hover:bg-slate-200 text-slate-600' : 'hover:bg-white/10 text-slate-400 hover:text-white'
+                }`}
+                title={`${t('terminal.contextPaste') || 'Вставить'} (Ctrl+V)`}
+              >
+                <ClipboardPaste className="w-3.5 h-3.5" />
+              </button>
+
               {/* Clear screen */}
               <button
                 onClick={handleClear}
-                className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
                 title={t('terminal.clear')}
               >
                 <Broom className="w-3.5 h-3.5" />
@@ -1081,6 +1247,33 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
         isPathCopied={isPathCopied}
         t={t}
       />
+
+      {/* Right-click Context Menu */}
+      {contextMenu && (
+        <TerminalContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          isLight={isLight}
+          hasSelection={Boolean(xtermInstance.current?.hasSelection())}
+          onCopy={handleCopySelection}
+          onPaste={handlePasteFromClipboard}
+          onSelectAll={handleSelectAll}
+          onClear={handleClear}
+          onReset={handleResetTerminal}
+          onDuplicate={onDuplicateSession}
+          onToggleSftp={() => {
+            setShowSftpSidebar((prev) => !prev);
+            setTimeout(() => fitAddonRef.current?.fit(), 100);
+          }}
+          onToggleMonitor={() => {
+            setShowMonitorSidebar((prev) => !prev);
+            setTimeout(() => fitAddonRef.current?.fit(), 100);
+          }}
+          showSftpSidebar={showSftpSidebar}
+          showMonitorSidebar={showMonitorSidebar}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 });

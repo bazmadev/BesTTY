@@ -154,6 +154,7 @@ export const en = {
     contextCopy: 'Copy selection',
     contextClear: 'Clear terminal',
     contextSelectAll: 'Select all',
+    contextReset: 'Reset terminal',
     next: 'Next',
     sessionClosed: '[Session closed by remote host]',
     resizerTooltip: 'Drag to resize (double-click to reset)',

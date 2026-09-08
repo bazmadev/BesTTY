@@ -156,6 +156,7 @@ export const ru: TranslationDictionary = {
     contextCopy: 'Копировать выделенное',
     contextClear: 'Очистить экран',
     contextSelectAll: 'Выделить всё',
+    contextReset: 'Сбросить терминал',
     next: 'Далее',
     sessionClosed: '[Сессия закрыта удаленным сервером]',
     resizerTooltip: 'Потяните для изменения ширины (двойной клик — сброс)',

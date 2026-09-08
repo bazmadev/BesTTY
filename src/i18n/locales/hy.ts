@@ -152,6 +152,7 @@ export const hy: TranslationDictionary = {
     contextCopy: 'Պատճենել նշվածը',
     contextClear: 'Մաքրել տերմինալը',
     contextSelectAll: 'Նշել ամբողջը',
+    contextReset: 'Վերականգնել տերմինալը',
     next: 'Հաջորդը',
     sessionClosed: '[Նիստն ավարտվել է հեռակա սերվերի կողմից]',
     resizerTooltip: 'Քաշեք լայնությունը փոխելու համար (կրկնակի կտտոց՝ վերականգնում)',
