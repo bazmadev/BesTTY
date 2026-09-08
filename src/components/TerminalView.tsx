@@ -317,16 +317,30 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     return false;
   }, []);
 
+  const lastPasteRef = useRef<{ text: string; time: number }>({ text: '', time: 0 });
+
+  const doPaste = useCallback((text: string) => {
+    if (!text || !isConnectedRef.current) return;
+    const now = Date.now();
+    // Guard against duplicate pastes of identical text within 400ms (e.g. keydown + native paste race)
+    if (lastPasteRef.current.text === text && now - lastPasteRef.current.time < 400) {
+      return;
+    }
+    lastPasteRef.current = { text, time: now };
+    if (window.api?.ssh) {
+      window.api.ssh.write(sessionId, text);
+    }
+    setShowAutocomplete(false);
+    xtermInstance.current?.scrollToBottom();
+    xtermInstance.current?.focus();
+  }, [sessionId]);
+
   const handlePasteFromClipboard = useCallback(async () => {
     const text = await readClipboardText();
     if (text) {
-      if (window.api?.ssh && isConnectedRef.current) {
-        window.api.ssh.write(sessionId, text);
-      }
-      xtermInstance.current?.scrollToBottom();
-      xtermInstance.current?.focus();
+      doPaste(text);
     }
-  }, [sessionId, readClipboardText]);
+  }, [doPaste, readClipboardText]);
 
   const handleCopySelection = useCallback(async () => {
     if (xtermInstance.current?.hasSelection()) {
@@ -378,21 +392,21 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     };
   }, []);
 
-  // Listen for native paste event on terminal container
+  // Listen for native paste event on terminal container (e.g. from context menus or native paste)
   useEffect(() => {
     const el = terminalRef.current;
     if (!el) return;
     const handlePasteEvent = (e: ClipboardEvent) => {
       e.preventDefault();
+      e.stopPropagation();
       const text = e.clipboardData?.getData('text');
-      if (text && window.api?.ssh && isConnectedRef.current) {
-        window.api.ssh.write(sessionId, text);
-        xtermInstance.current?.scrollToBottom();
+      if (text) {
+        doPaste(text);
       }
     };
     el.addEventListener('paste', handlePasteEvent);
     return () => el.removeEventListener('paste', handlePasteEvent);
-  }, [sessionId]);
+  }, [doPaste]);
 
   // Hot theme switching without disposing xterm or losing scrollback
   useEffect(() => {
@@ -508,6 +522,8 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
         (event.ctrlKey && isKeyV) ||
         (event.shiftKey && event.key === 'Insert')
       ) {
+        event.preventDefault();
+        event.stopPropagation();
         if (event.type === 'keydown') {
           handlePasteFromClipboard();
         }
@@ -520,6 +536,8 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
         (event.ctrlKey && event.shiftKey && isKeyC) ||
         (event.ctrlKey && event.key === 'Insert')
       ) {
+        event.preventDefault();
+        event.stopPropagation();
         if (event.type === 'keydown') {
           const selection = term.getSelection();
           if (selection) {
@@ -532,6 +550,8 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
 
       // Select All: Ctrl+Shift+A (works across all keyboard layouts)
       if (event.ctrlKey && event.shiftKey && isKeyA) {
+        event.preventDefault();
+        event.stopPropagation();
         if (event.type === 'keydown') {
           term.selectAll();
         }
@@ -545,6 +565,12 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     const onDataDispose = term.onData((data) => {
       // Prevent sending keystrokes and accumulating autocomplete buffer when disconnected
       if (!isConnectedRef.current) {
+        return;
+      }
+
+      // If xterm emits pasted data that matches our recent paste, drop the duplicate!
+      const now = Date.now();
+      if (data.length > 1 && lastPasteRef.current.text === data && now - lastPasteRef.current.time < 400) {
         return;
       }
 
