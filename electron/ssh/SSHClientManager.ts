@@ -1,5 +1,6 @@
 import { Client, ClientChannel, ConnectConfig } from 'ssh2';
 import { EventEmitter } from 'events';
+import { StringDecoder } from 'string_decoder';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -12,7 +13,84 @@ export interface SSHSessionInfo {
   client: Client;
   shellStream?: ClientChannel;
   currentDirectory: string;
+  homeDirectory?: string;
   fingerprint?: string;
+}
+
+function extractDirectoryFromStream(str: string, homeDir?: string): string | null {
+  // 1. SmarTTY / iTerm / VTE: Parse OSC 7 directory update sequence
+  const osc7Match = str.match(/\x1b\]7;file:\/\/[^\/]*(\/[^\x07\x1b]*)(?:\x07|\x1b\\)/);
+  if (osc7Match && osc7Match[1]) {
+    try {
+      const rawDir = decodeURIComponent(osc7Match[1]);
+      const cleanDir = rawDir
+        .replace(/[\x00-\x1f]/g, '')
+        .replace(/^['"\s]+|['"\s]+$/g, '')
+        .replace(/[#$%>:\s]+$/, '')
+        .trim();
+      return path.posix.normalize(cleanDir);
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2. Shell Prompt Detection
+  // Strip ANSI escape codes
+  const stripped = str
+    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\r/g, '');
+
+  let extractedPath: string | null = null;
+
+  // Ubuntu / Debian / Standard PS1: (user@host:|host:)(path)([$#%>])
+  const m1 = stripped.match(/(?:[\w.-]+@[\w.-]+:|[\w.-]+:)\s*([/~][^\r\n#$%>]*?)\s*[$#%>]\s*$/);
+  if (m1 && m1[1]) {
+    extractedPath = m1[1].trim();
+  }
+
+  // CentOS / RedHat bracketed PS1: [user@host path][$#%>]
+  if (!extractedPath) {
+    const m2 = stripped.match(/\[[\w.-]+@[\w.-]+\s+([/~][^\]\r\n]*?)\]\s*[$#%>]\s*$/);
+    if (m2 && m2[1]) {
+      extractedPath = m2[1].trim();
+    }
+  }
+
+  // Zsh / Fish default: user@host path [%$#>]
+  if (!extractedPath) {
+    const m3 = stripped.match(/[\w.-]+@[\w.-]+\s+([/~][^\r\n#$%>]*?)\s*[$#%>]\s*$/);
+    if (m3 && m3[1]) {
+      extractedPath = m3[1].trim();
+    }
+  }
+
+  if (extractedPath) {
+    // Strip any quotes, trailing prompt symbols (#, $, %, >), colons, and whitespace
+    extractedPath = extractedPath
+      .replace(/^['"\s]+|['"\s]+$/g, '')
+      .replace(/[#$%>:\s]+$/, '')
+      .trim();
+
+    const effectiveHome = homeDir || '/root';
+    let resolved = extractedPath;
+    if (resolved === '~') {
+      resolved = effectiveHome;
+    } else if (resolved.startsWith('~/')) {
+      resolved = path.posix.join(effectiveHome, resolved.slice(2));
+    }
+    const cleanDir = resolved
+      .replace(/[\x00-\x1f]/g, '')
+      .replace(/^['"\s]+|['"\s]+$/g, '')
+      .replace(/[#$%>:\s]+$/, '')
+      .trim();
+    const normalized = path.posix.normalize(cleanDir);
+    if (normalized.startsWith('/') && normalized.length > 0) {
+      return normalized;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -215,6 +293,38 @@ function formatAuthError(
 
 export class SSHClientManager extends EventEmitter {
   private sessions: Map<string, SSHSessionInfo> = new Map();
+  private batchers: Map<string, {
+    decoder: StringDecoder;
+    buffer: string;
+    timer: NodeJS.Timeout | null;
+  }> = new Map();
+
+  private getOrCreateBatcher(sessionId: string) {
+    let batcher = this.batchers.get(sessionId);
+    if (!batcher) {
+      batcher = {
+        decoder: new StringDecoder('utf8'),
+        buffer: '',
+        timer: null,
+      };
+      this.batchers.set(sessionId, batcher);
+    }
+    return batcher;
+  }
+
+  private flushBatcher(sessionId: string): void {
+    const batcher = this.batchers.get(sessionId);
+    if (!batcher) return;
+    if (batcher.timer) {
+      clearTimeout(batcher.timer);
+      batcher.timer = null;
+    }
+    if (batcher.buffer.length > 0) {
+      const data = batcher.buffer;
+      batcher.buffer = '';
+      this.emit('data', { sessionId, data });
+    }
+  }
 
   constructor() {
     super();
@@ -278,46 +388,67 @@ export class SSHClientManager extends EventEmitter {
               return;
             }
 
+            const effectiveUser = host.username?.trim();
+            const homeDir = effectiveUser === 'root' ? '/root' : (effectiveUser ? `/home/${effectiveUser}` : '/root');
+            const initialDir = host.defaultPath ? path.posix.normalize(host.defaultPath) : homeDir;
+
             const sessionInfo: SSHSessionInfo = {
               id: sessionId,
               hostId: host.id,
               title: host.name || `${host.username}@${host.host}`,
               client,
               shellStream: stream,
-              currentDirectory: host.defaultPath || '~',
+              currentDirectory: initialDir,
+              homeDirectory: homeDir,
               fingerprint: detectedFingerprint || host.fingerprint,
             };
 
             this.sessions.set(sessionId, sessionInfo);
 
-            // Handle incoming data from remote server
+            // Handle incoming data from remote server with stream batching and UTF-8 decoding
             stream.on('data', (data: Buffer) => {
-              const str = data.toString('utf-8');
+              const batcher = this.getOrCreateBatcher(sessionId);
+              const str = batcher.decoder.write(data);
+              if (!str) return;
 
-              // SmarTTY: Parse OSC 7 directory update sequence
-              const osc7Match = str.match(/\x1b\]7;file:\/\/[^\/]*(\/[^\x07\x1b]*)(?:\x07|\x1b\\)/);
-              if (osc7Match && osc7Match[1]) {
-                try {
-                  const rawDir = decodeURIComponent(osc7Match[1]);
-                  // Security: sanitize directory path to prevent control char injection
-                  const cleanDir = rawDir.replace(/[\x00-\x1f]/g, '');
-                  const normalizedDir = path.posix.normalize(cleanDir);
-                  sessionInfo.currentDirectory = normalizedDir;
-                  this.emit('directory-changed', { sessionId, directory: normalizedDir });
-                } catch {
-                  // ignore malformed OSC 7
-                }
+              // Automatically detect directory updates from OSC 7 escape sequences or shell prompt
+              const detectedDir = extractDirectoryFromStream(str, sessionInfo.homeDirectory);
+              if (detectedDir && detectedDir !== sessionInfo.currentDirectory) {
+                sessionInfo.currentDirectory = detectedDir;
+                this.emit('directory-changed', { sessionId, directory: detectedDir });
               }
 
-              this.emit('data', { sessionId, data: str });
+              batcher.buffer += str;
+              if (batcher.buffer.length >= 32768) {
+                this.flushBatcher(sessionId);
+              } else if (!batcher.timer) {
+                batcher.timer = setTimeout(() => {
+                  this.flushBatcher(sessionId);
+                }, 10);
+              }
+            });
+
+            stream.on('error', (streamErr: any) => {
+              console.warn(`[SSHClientManager] Stream error on session ${sessionId}:`, streamErr);
+              this.emit('ssh-error', { sessionId, error: streamErr.message || String(streamErr) });
             });
 
             stream.on('close', () => {
+              this.flushBatcher(sessionId);
+              const batcher = this.batchers.get(sessionId);
+              if (batcher) {
+                const remaining = batcher.decoder.end();
+                if (remaining) {
+                  this.emit('data', { sessionId, data: remaining });
+                }
+              }
               this.emit('closed', { sessionId });
               this.disconnect(sessionId);
             });
 
             this.emit('connected', { sessionId, hostId: host.id, fingerprint: detectedFingerprint });
+            // Emit initial directory immediately upon connection
+            this.emit('directory-changed', { sessionId, directory: sessionInfo.currentDirectory });
             if (!isResolved) {
               isResolved = true;
               resolve();
@@ -470,16 +601,36 @@ export class SSHClientManager extends EventEmitter {
     return undefined;
   }
 
+  public getCurrentDirectory(sessionId: string): string | undefined {
+    return this.sessions.get(sessionId)?.currentDirectory;
+  }
+
   public disconnect(sessionId: string): void {
+    this.flushBatcher(sessionId);
+    const batcher = this.batchers.get(sessionId);
+    if (batcher) {
+      if (batcher.timer) clearTimeout(batcher.timer);
+      this.batchers.delete(sessionId);
+    }
+
     const session = this.sessions.get(sessionId);
     if (session) {
       try {
         if (session.shellStream) {
+          session.shellStream.removeAllListeners();
           session.shellStream.close();
         }
         session.client.end();
+        // Give 800ms for graceful FIN handshake, then force destroy to prevent zombie TCP connections
+        setTimeout(() => {
+          try {
+            session.client.destroy();
+          } catch {}
+        }, 800);
       } catch (e) {
-        // ignore
+        try {
+          session.client.destroy();
+        } catch {}
       }
       this.sessions.delete(sessionId);
     }

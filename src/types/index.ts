@@ -24,7 +24,30 @@ export interface HostProfile {
   updatedAt: number;
 }
 
-export type TabType = 'terminal' | 'sftp' | 'editor' | 'monitor' | 'tunnels' | 'settings';
+export type TabType = 'terminal' | 'sftp' | 'editor' | 'monitor' | 'tunnels' | 'settings' | 'local';
+
+export type SplitLayoutMode = 'single' | 'split-2' | 'split-3';
+
+export type PaneViewType = 'terminal' | 'sftp' | 'monitor' | 'local' | 'editor';
+
+export interface PaneConfig {
+  id: string;
+  viewType: PaneViewType;
+  tabId?: string;
+}
+
+export interface LocalDrive {
+  name: string;
+  path: string;
+  isDrive: boolean;
+}
+
+export interface FileClipboardState {
+  action: 'copy' | 'cut';
+  source: 'remote' | 'local';
+  sessionId?: string;
+  files: string[];
+}
 
 export interface TabItem {
   id: string;
@@ -33,9 +56,25 @@ export interface TabItem {
   hostId?: string;
   sessionId?: string;
   filePath?: string;
+  initialPath?: string;
   initialContent?: string;
   isModified?: boolean;
+  splitMode?: SplitLayoutMode;
+  panes?: PaneConfig[];
+  originalType?: TabType;
+  originalTitle?: string;
 }
+
+export interface DirectorySyncConfig {
+  terminalToBrowser: boolean;
+  browserToTerminal: boolean;
+}
+
+export const STORAGE_KEY_DIR_SYNC = 'bestty_directory_sync_config';
+export const STORAGE_KEY_FOLDER_CLICK_MODE = 'bestty_folder_click_mode';
+export const EVENT_DIR_SYNC_CHANGED = 'bestty_dir_sync_changed';
+export const EVENT_SFTP_REFRESHED = 'bestty_sftp_refreshed';
+export type FolderClickMode = 'single' | 'double';
 
 export interface SFTPFile {
   name: string;
@@ -103,7 +142,7 @@ export interface Snippet {
 }
 
 export interface BesTTYSettings {
-  locale: 'en' | 'ru';
+  locale: 'en' | 'ru' | 'hy';
   theme: 'system' | 'fluent-dark' | 'fluent-light' | 'dracula' | 'one-dark' | 'nord';
   fontFamily: string;
   fontSize: number;
@@ -113,6 +152,7 @@ export interface BesTTYSettings {
   confirmOnClose: boolean;
   sftpFollowTerminal: boolean; // OSC 7 directory tracking
   enableHardwareAcceleration: boolean;
+  folderClickMode?: FolderClickMode;
 }
 
 export type VaultProtectionMode = 'system' | 'password' | 'plain';

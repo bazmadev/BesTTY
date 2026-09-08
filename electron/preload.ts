@@ -64,11 +64,13 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('ssh:directory-changed', handler);
       return () => ipcRenderer.removeListener('ssh:directory-changed', handler);
     },
+    getCurrentDirectory: (sessionId: string) =>
+      ipcRenderer.invoke('ssh:getCurrentDirectory', sessionId),
   },
 
   sftp: {
-    list: (sessionId: string, path?: string) =>
-      ipcRenderer.invoke('sftp:list', sessionId, path),
+    list: (sessionId: string, path?: string, forceRefresh?: boolean) =>
+      ipcRenderer.invoke('sftp:list', sessionId, path, forceRefresh),
     readFile: (sessionId: string, remotePath: string) =>
       ipcRenderer.invoke('sftp:readFile', sessionId, remotePath),
     writeFile: (sessionId: string, remotePath: string, content: string) =>
@@ -83,6 +85,31 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('sftp:rename', sessionId, oldPath, newPath),
     chmod: (sessionId: string, remotePath: string, mode: number) =>
       ipcRenderer.invoke('sftp:chmod', sessionId, remotePath, mode),
+    copyFile: (sessionId: string, srcPath: string, destPath: string) =>
+      ipcRenderer.invoke('sftp:copyFile', sessionId, srcPath, destPath),
+    uploadFile: (sessionId: string, localPath: string, remotePath: string) =>
+      ipcRenderer.invoke('sftp:uploadFile', sessionId, localPath, remotePath),
+    downloadFile: (sessionId: string, remotePath: string, localPath: string) =>
+      ipcRenderer.invoke('sftp:downloadFile', sessionId, remotePath, localPath),
+  },
+
+  local: {
+    list: (dirPath?: string) =>
+      ipcRenderer.invoke('local:list', dirPath),
+    getDrives: () =>
+      ipcRenderer.invoke('local:getDrives'),
+    mkdir: (dirPath: string) =>
+      ipcRenderer.invoke('local:mkdir', dirPath),
+    delete: (targetPath: string) =>
+      ipcRenderer.invoke('local:delete', targetPath),
+    rename: (oldPath: string, newPath: string) =>
+      ipcRenderer.invoke('local:rename', oldPath, newPath),
+    copy: (srcPath: string, destPath: string) =>
+      ipcRenderer.invoke('local:copy', srcPath, destPath),
+    readFile: (targetPath: string) =>
+      ipcRenderer.invoke('local:readFile', targetPath),
+    writeFile: (targetPath: string, content: string) =>
+      ipcRenderer.invoke('local:writeFile', targetPath, content),
   },
 
   monitor: {

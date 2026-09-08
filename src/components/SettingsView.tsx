@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BesTTYSettings, VaultStatus, VaultProtectionMode } from '../types';
 import { useTranslation, SupportedLocale } from '../i18n';
 import { Settings, Shield, Terminal, Palette, FolderTree, Check, Save, Languages, Sun, Moon, Sparkles, Heart, Download, ShieldCheck, KeyRound, AlertTriangle, Fingerprint } from 'lucide-react';
+import appLogo from '../assets/logo.png';
 
 interface SettingsViewProps {
   settings: BesTTYSettings;
@@ -151,11 +152,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* Language Selector */}
             <div>
               <label className="block text-xs text-slate-400 mb-1 font-medium">{t('settings.language')}</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => handleLanguageChange('ru')}
-                  className={`py-2 px-3 rounded-lg text-xs font-medium border flex items-center justify-center space-x-2 transition-all ${
+                  className={`py-2 px-2 rounded-lg text-xs font-medium border flex items-center justify-center space-x-1.5 transition-all ${
                     locale === 'ru'
                       ? 'bg-sky-600 text-white border-sky-500 shadow'
                       : isLight ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-[#272727] border-[#3d3d3d] text-slate-300 hover:bg-[#333]'
@@ -167,14 +168,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleLanguageChange('en')}
-                  className={`py-2 px-3 rounded-lg text-xs font-medium border flex items-center justify-center space-x-2 transition-all ${
+                  className={`py-2 px-2 rounded-lg text-xs font-medium border flex items-center justify-center space-x-1.5 transition-all ${
                     locale === 'en'
                       ? 'bg-sky-600 text-white border-sky-500 shadow'
                       : isLight ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-[#272727] border-[#3d3d3d] text-slate-300 hover:bg-[#333]'
                   }`}
                 >
-                  <span>🇺🇸</span>
+                  <span>🇬🇧</span>
                   <span>English</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleLanguageChange('hy')}
+                  className={`py-2 px-2 rounded-lg text-xs font-medium border flex items-center justify-center space-x-1.5 transition-all ${
+                    locale === 'hy'
+                      ? 'bg-sky-600 text-white border-sky-500 shadow'
+                      : isLight ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-[#272727] border-[#3d3d3d] text-slate-300 hover:bg-[#333]'
+                  }`}
+                >
+                  <span>🇦🇲</span>
+                  <span>Հայերեն</span>
                 </button>
               </div>
             </div>
@@ -525,9 +538,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
           </div>
 
-          {/* Action buttons (if password mode) */}
-          {vaultStatus?.protectionMode === 'password' && (
-            <div className="flex items-center space-x-3 pt-1">
+          {/* Action buttons */}
+          <div className="flex items-center space-x-3 pt-1">
+            {vaultStatus?.protectionMode === 'password' && (
               <button
                 type="button"
                 onClick={onSetupVault}
@@ -537,6 +550,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               >
                 {t('settings.changeMaster')}
               </button>
+            )}
+            {vaultStatus?.isUnlocked && (
               <button
                 type="button"
                 onClick={async () => {
@@ -547,8 +562,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               >
                 {t('settings.lockVault')}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* About BesTTY Section */}
@@ -558,7 +573,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="flex items-start justify-between">
             <div className="flex items-center space-x-3.5">
               <img
-                src="/logo.png"
+                src={appLogo}
                 alt="BesTTY"
                 className="w-12 h-12 rounded-xl object-contain drop-shadow-md border border-white/10"
               />

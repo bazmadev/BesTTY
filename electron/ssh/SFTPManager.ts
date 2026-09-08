@@ -2,10 +2,44 @@ import { SFTPWrapper } from 'ssh2';
 import { SSHClientManager } from './SSHClientManager';
 import { SFTPFile } from '../../src/types';
 
+interface CachedDir {
+  currentPath: string;
+  files: SFTPFile[];
+  timestamp: number;
+}
+
 export class SFTPManager {
   private sftpSessions: Map<string, SFTPWrapper> = new Map();
+  private dirCache: Map<string, CachedDir> = new Map();
+  private readonly CACHE_TTL_MS = 30000; // 30 seconds
 
   constructor(private sshManager: SSHClientManager) {}
+
+  private getCacheKey(sessionId: string, remotePath: string): string {
+    const normalized = remotePath.replace(/\/+$/, '') || '/';
+    return `${sessionId}:${normalized}`;
+  }
+
+  public invalidateCacheForPath(sessionId: string, remotePath: string): void {
+    const key = this.getCacheKey(sessionId, remotePath);
+    this.dirCache.delete(key);
+
+    // Also invalidate parent directory
+    const clean = remotePath.replace(/\/+$/, '');
+    const lastSlash = clean.lastIndexOf('/');
+    if (lastSlash >= 0) {
+      const parent = clean.substring(0, lastSlash) || '/';
+      this.dirCache.delete(this.getCacheKey(sessionId, parent));
+    }
+  }
+
+  public clearCacheForSession(sessionId: string): void {
+    for (const key of this.dirCache.keys()) {
+      if (key.startsWith(`${sessionId}:`)) {
+        this.dirCache.delete(key);
+      }
+    }
+  }
 
   private async getSFTP(sessionId: string): Promise<SFTPWrapper> {
     const existing = this.sftpSessions.get(sessionId);
@@ -26,6 +60,7 @@ export class SFTPManager {
         this.sftpSessions.set(sessionId, sftp);
         sftp.on('close', () => {
           this.sftpSessions.delete(sessionId);
+          this.clearCacheForSession(sessionId);
         });
         resolve(sftp);
       });
@@ -45,16 +80,29 @@ export class SFTPManager {
     return `${prefix}${u}${g}${o}`;
   }
 
-  public async listDirectory(sessionId: string, remotePath: string = '.'): Promise<{ currentPath: string; files: SFTPFile[] }> {
+  public async listDirectory(
+    sessionId: string,
+    remotePath: string = '.',
+    forceRefresh: boolean = false
+  ): Promise<{ currentPath: string; files: SFTPFile[] }> {
     const sftp = await this.getSFTP(sessionId);
 
     // Resolve realpath
-    const realPath = await new Promise<string>((resolve, reject) => {
+    const realPath = await new Promise<string>((resolve) => {
       sftp.realpath(remotePath, (err, resolved) => {
         if (err) resolve(remotePath);
         else resolve(resolved);
       });
     });
+
+    // Check fast in-memory directory cache
+    const cacheKey = this.getCacheKey(sessionId, realPath);
+    if (!forceRefresh) {
+      const cached = this.dirCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
+        return { currentPath: cached.currentPath, files: cached.files };
+      }
+    }
 
     return new Promise((resolve, reject) => {
       sftp.readdir(realPath, (err, list) => {
@@ -90,6 +138,12 @@ export class SFTPManager {
           return a.name.localeCompare(b.name);
         });
 
+        this.dirCache.set(cacheKey, {
+          currentPath: realPath,
+          files,
+          timestamp: Date.now(),
+        });
+
         resolve({ currentPath: realPath, files });
       });
     });
@@ -99,15 +153,23 @@ export class SFTPManager {
     const sftp = await this.getSFTP(sessionId);
 
     return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const stream = sftp.createReadStream(remotePath);
+      let isSettled = false;
+      const timer = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          reject(new Error(`SFTP read timeout for ${remotePath}`));
+        }
+      }, 15000);
 
-      stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-      stream.on('end', () => {
-        const fullBuffer = Buffer.concat(chunks);
-        resolve(fullBuffer.toString('utf-8'));
+      sftp.readFile(remotePath, (err: any, buffer: Buffer) => {
+        if (isSettled) return;
+        clearTimeout(timer);
+        isSettled = true;
+        if (err) {
+          return reject(err);
+        }
+        resolve(buffer.toString('utf-8'));
       });
-      stream.on('error', (err: any) => reject(err));
     });
   }
 
@@ -115,10 +177,22 @@ export class SFTPManager {
     const sftp = await this.getSFTP(sessionId);
 
     return new Promise((resolve, reject) => {
-      const stream = sftp.createWriteStream(remotePath);
-      stream.on('close', () => resolve());
-      stream.on('error', (err: any) => reject(err));
-      stream.end(Buffer.from(content, 'utf-8'));
+      let isSettled = false;
+      const timer = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          reject(new Error(`SFTP write timeout for ${remotePath}`));
+        }
+      }, 15000);
+
+      sftp.writeFile(remotePath, Buffer.from(content, 'utf-8'), (err: any) => {
+        if (isSettled) return;
+        clearTimeout(timer);
+        isSettled = true;
+        if (err) return reject(err);
+        this.invalidateCacheForPath(sessionId, remotePath);
+        resolve();
+      });
     });
   }
 
@@ -138,12 +212,16 @@ export class SFTPManager {
 
     return new Promise((resolve, reject) => {
       // Use sudo tee with properly escaped path to safely write protected file
-      session.client.exec(`sudo tee ${safePath} > /dev/null`, (err, stream) => {
+      session.client.exec(`sudo tee -- ${safePath} > /dev/null`, (err, stream) => {
         if (err) return reject(err);
 
         stream.on('close', (code: number) => {
-          if (code === 0) resolve();
-          else reject(new Error(`sudo tee exited with code ${code}`));
+          if (code === 0) {
+            this.invalidateCacheForPath(sessionId, remotePath);
+            resolve();
+          } else {
+            reject(new Error(`sudo tee exited with code ${code}`));
+          }
         });
         stream.on('error', (e: any) => reject(e));
 
@@ -157,26 +235,105 @@ export class SFTPManager {
     const sftp = await this.getSFTP(sessionId);
     return new Promise((resolve, reject) => {
       sftp.mkdir(remotePath, (err) => {
-        if (err) reject(err);
-        else resolve();
+        if (err) {
+          reject(err);
+        } else {
+          this.invalidateCacheForPath(sessionId, remotePath);
+          resolve();
+        }
       });
     });
   }
 
   public async deleteFile(sessionId: string, remotePath: string, isDirectory: boolean): Promise<void> {
     const sftp = await this.getSFTP(sessionId);
+    const session = this.sshManager.getSession(sessionId);
+
     return new Promise((resolve, reject) => {
       if (isDirectory) {
         sftp.rmdir(remotePath, (err) => {
-          if (err) reject(err);
-          else resolve();
+          if (!err) {
+            this.invalidateCacheForPath(sessionId, remotePath);
+            return resolve();
+          }
+          // If rmdir fails (directory not empty), fallback to rm -rf via ssh client
+          if (session && session.client) {
+            const safePath = `'${remotePath.replace(/'/g, "'\\''")}'`;
+            session.client.exec(`rm -rf -- ${safePath}`, (execErr, stream) => {
+              if (execErr) return reject(err);
+              stream.on('close', (code: number) => {
+                if (code === 0) {
+                  this.invalidateCacheForPath(sessionId, remotePath);
+                  resolve();
+                } else {
+                  reject(new Error(`Delete directory failed with exit code ${code}`));
+                }
+              });
+              stream.on('error', (e: any) => reject(e));
+            });
+          } else {
+            reject(err);
+          }
         });
       } else {
         sftp.unlink(remotePath, (err) => {
-          if (err) reject(err);
-          else resolve();
+          if (err) {
+            reject(err);
+          } else {
+            this.invalidateCacheForPath(sessionId, remotePath);
+            resolve();
+          }
         });
       }
+    });
+  }
+
+  public async copyFile(sessionId: string, srcPath: string, destPath: string): Promise<void> {
+    const session = this.sshManager.getSession(sessionId);
+    if (!session || !session.client) {
+      throw new Error(`SSH Session ${sessionId} not found`);
+    }
+
+    const safeSrc = `'${srcPath.replace(/'/g, "'\\''")}'`;
+    const safeDest = `'${destPath.replace(/'/g, "'\\''")}'`;
+
+    return new Promise((resolve, reject) => {
+      session.client.exec(`cp -r -- ${safeSrc} ${safeDest}`, (err, stream) => {
+        if (err) return reject(err);
+        stream.on('close', (code: number) => {
+          if (code === 0) {
+            this.invalidateCacheForPath(sessionId, destPath);
+            resolve();
+          } else {
+            reject(new Error(`Remote copy failed with code ${code}`));
+          }
+        });
+        stream.on('error', (e: any) => reject(e));
+      });
+    });
+  }
+
+  public async uploadFile(sessionId: string, localPath: string, remotePath: string): Promise<void> {
+    const sftp = await this.getSFTP(sessionId);
+    return new Promise((resolve, reject) => {
+      sftp.fastPut(localPath, remotePath, (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          this.invalidateCacheForPath(sessionId, remotePath);
+          resolve();
+        }
+      });
+    });
+  }
+
+  public async downloadFile(sessionId: string, remotePath: string, localPath: string): Promise<void> {
+    const sftp = await this.getSFTP(sessionId);
+    return new Promise((resolve, reject) => {
+      sftp.fastGet(remotePath, localPath, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
     });
   }
 
@@ -184,8 +341,13 @@ export class SFTPManager {
     const sftp = await this.getSFTP(sessionId);
     return new Promise((resolve, reject) => {
       sftp.rename(oldPath, newPath, (err) => {
-        if (err) reject(err);
-        else resolve();
+        if (err) {
+          reject(err);
+        } else {
+          this.invalidateCacheForPath(sessionId, oldPath);
+          this.invalidateCacheForPath(sessionId, newPath);
+          resolve();
+        }
       });
     });
   }
@@ -194,8 +356,12 @@ export class SFTPManager {
     const sftp = await this.getSFTP(sessionId);
     return new Promise((resolve, reject) => {
       sftp.chmod(remotePath, mode, (err) => {
-        if (err) reject(err);
-        else resolve();
+        if (err) {
+          reject(err);
+        } else {
+          this.invalidateCacheForPath(sessionId, remotePath);
+          resolve();
+        }
       });
     });
   }

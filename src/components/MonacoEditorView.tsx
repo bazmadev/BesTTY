@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import '../utils/monacoSetup';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { Save, ShieldAlert, GitCompare, Check, AlertCircle, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from '../i18n';
@@ -100,16 +101,21 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
     onModifiedChange?.(modified);
   };
 
+  const editorRef = useRef<any>(null);
+
   const handleSave = async (useSudo: boolean = false) => {
+    // Read the most up-to-date value from the editor instance if available
+    const activeVal = editorRef.current?.getValue?.() ?? content;
     setIsSaving(true);
     setSaveMessage(null);
     try {
       if (useSudo) {
-        await window.api.sftp.sudoWriteFile(sessionId, filePath, content);
+        await window.api.sftp.sudoWriteFile(sessionId, filePath, activeVal);
       } else {
-        await window.api.sftp.writeFile(sessionId, filePath, content);
+        await window.api.sftp.writeFile(sessionId, filePath, activeVal);
       }
-      setOriginalContent(content);
+      setOriginalContent(activeVal);
+      setContent(activeVal);
       setIsDirty(false);
       onModifiedChange?.(false);
       setSaveMessage({ text: t('editor.savedSuccess'), type: 'success' });
@@ -124,16 +130,45 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
     }
   };
 
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
+  const handleEditorDidMount = (editor: any, monaco: any) => {
+    editorRef.current = editor;
+    editor.addAction({
+      id: 'bestty-save-file',
+      label: 'Save File',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+      run: () => {
+        handleSaveRef.current(false);
+      },
+    });
+  };
+
+  const handleDiffEditorDidMount = (editor: any, monaco: any) => {
+    const modifiedEditor = editor.getModifiedEditor?.();
+    if (modifiedEditor) {
+      modifiedEditor.addAction({
+        id: 'bestty-save-diff-file',
+        label: 'Save File',
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+        run: () => {
+          handleSaveRef.current(false);
+        },
+      });
+    }
+  };
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        handleSave(false);
+        handleSaveRef.current(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [content, sessionId, filePath]);
+  }, []);
 
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden select-none ${
@@ -227,12 +262,31 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
             <RefreshCw className="w-6 h-6 animate-spin text-sky-500" />
             <span className="text-xs">{t('editor.loading')}</span>
           </div>
+        ) : saveMessage?.type === 'error' && !content ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-3 p-6 text-center">
+            <AlertCircle className="w-10 h-10 text-rose-500" />
+            <div className="text-xs font-semibold text-rose-400 max-w-md">{saveMessage.text}</div>
+            <button
+              onClick={loadFile}
+              className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{t('sftp.refresh')}</span>
+            </button>
+          </div>
         ) : isDiffMode ? (
           <DiffEditor
             original={originalContent}
             modified={content}
             language={getLanguage(fileName)}
             theme={isLight ? 'vs' : 'vs-dark'}
+            onMount={handleDiffEditorDidMount}
+            loading={
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2">
+                <RefreshCw className="w-6 h-6 animate-spin text-sky-500" />
+                <span className="text-xs">{t('editor.loading')}</span>
+              </div>
+            }
             options={{
               readOnly: false,
               automaticLayout: true,
@@ -246,7 +300,14 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
             language={getLanguage(fileName)}
             value={content}
             theme={isLight ? 'vs' : 'vs-dark'}
+            onMount={handleEditorDidMount}
             onChange={handleEditorChange}
+            loading={
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2">
+                <RefreshCw className="w-6 h-6 animate-spin text-sky-500" />
+                <span className="text-xs">{t('editor.loading')}</span>
+              </div>
+            }
             options={{
               automaticLayout: true,
               fontSize: 14,

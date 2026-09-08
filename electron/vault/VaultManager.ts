@@ -550,8 +550,9 @@ export class VaultManager {
 
       const normalizedRecovery = normalizeRecoveryKey(recoveryKey);
       const hash = crypto.createHash('sha256').update(normalizedRecovery).digest('hex');
-
-      if (hash !== env.recoveryKeyHash) {
+      const computedBuf = Buffer.from(hash, 'hex');
+      const expectedBuf = Buffer.from(env.recoveryKeyHash, 'hex');
+      if (computedBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(computedBuf, expectedBuf)) {
         return { success: false, error: 'Invalid recovery phrase or key' };
       }
 
@@ -604,9 +605,31 @@ export class VaultManager {
           return true;
         }
 
-        if (!env.isMasterPasswordSet && env.protectionMode === 'system') {
-          this.isUnlocked = true;
-          return true;
+        if (env.protectionMode === 'system') {
+          let unwrappedDek: Buffer | null = null;
+          if (env.systemWrappedDek) {
+            unwrappedDek = this.unwrapWithSafeStorage(env.systemWrappedDek);
+          }
+          if (!unwrappedDek && env.unprotectedWrappedDek) {
+            const defaultKey = this.getDefaultKey();
+            const decipher = crypto.createDecipheriv('aes-256-gcm', defaultKey, Buffer.from(env.unprotectedWrappedDek.iv, 'hex'));
+            decipher.setAuthTag(Buffer.from(env.unprotectedWrappedDek.tag, 'hex'));
+            unwrappedDek = Buffer.concat([decipher.update(Buffer.from(env.unprotectedWrappedDek.ciphertext, 'hex')), decipher.final()]);
+          }
+
+          if (unwrappedDek && env.payloadIv && env.payloadTag && env.payloadCiphertext) {
+            const payloadDecipher = crypto.createDecipheriv('aes-256-gcm', unwrappedDek, Buffer.from(env.payloadIv, 'hex'));
+            payloadDecipher.setAuthTag(Buffer.from(env.payloadTag, 'hex'));
+            let decrypted = payloadDecipher.update(Buffer.from(env.payloadCiphertext, 'hex'), undefined, 'utf8');
+            decrypted += payloadDecipher.final('utf8');
+
+            this.memoryData = JSON.parse(decrypted);
+            this.dek = unwrappedDek;
+            this.envelope = env;
+            this.isUnlocked = true;
+            return true;
+          }
+          return false;
         }
 
         if (!env.passwordSalt || !env.passwordWrappedDek) {
@@ -650,7 +673,39 @@ export class VaultManager {
   }
 
   private writeVaultFile(env: VaultEnvelope): void {
-    fs.writeFileSync(this.vaultPath, JSON.stringify(env, null, 2), { encoding: 'utf8', mode: 0o600 });
+    const tempPath = `${this.vaultPath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+    const content = JSON.stringify(env, null, 2);
+    try {
+      fs.writeFileSync(tempPath, content, { encoding: 'utf8', mode: 0o600 });
+      if (process.platform === 'win32') {
+        const bakPath = `${this.vaultPath}.bak`;
+        if (fs.existsSync(this.vaultPath)) {
+          try {
+            fs.copyFileSync(this.vaultPath, bakPath);
+          } catch {}
+        }
+        try {
+          fs.renameSync(tempPath, this.vaultPath);
+          if (fs.existsSync(bakPath)) {
+            try { fs.unlinkSync(bakPath); } catch {}
+          }
+        } catch (renameErr) {
+          // Fallback if destination file was locked during rename
+          fs.copyFileSync(tempPath, this.vaultPath);
+          try { fs.unlinkSync(tempPath); } catch {}
+          if (fs.existsSync(bakPath)) {
+            try { fs.unlinkSync(bakPath); } catch {}
+          }
+        }
+      } else {
+        fs.renameSync(tempPath, this.vaultPath);
+      }
+    } catch (err) {
+      if (fs.existsSync(tempPath)) {
+        try { fs.unlinkSync(tempPath); } catch {}
+      }
+      throw err;
+    }
   }
 
   public save(): boolean {
@@ -728,18 +783,21 @@ export class VaultManager {
   }
 
   public lock(): void {
-    if (this.protectionMode === 'password') {
-      this.isUnlocked = false;
-      this.dek = null;
-      this.memoryData = {
-        version: 2,
-        isMasterPasswordSet: true,
-        hosts: [],
-        snippets: this.memoryData.snippets || DEFAULT_SNIPPETS,
-        tunnels: [],
-        settings: this.memoryData.settings || DEFAULT_SETTINGS,
-      };
+    this.isUnlocked = false;
+    if (this.dek) {
+      try {
+        this.dek.fill(0);
+      } catch {}
     }
+    this.dek = null;
+    this.memoryData = {
+      version: 2,
+      isMasterPasswordSet: this.protectionMode === 'password',
+      hosts: [],
+      snippets: this.memoryData.snippets || DEFAULT_SNIPPETS,
+      tunnels: [],
+      settings: this.memoryData.settings || DEFAULT_SETTINGS,
+    };
   }
 
   // Hosts

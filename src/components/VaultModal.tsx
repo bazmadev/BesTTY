@@ -54,6 +54,24 @@ export const VaultModal: React.FC<VaultModalProps> = ({
     }
   };
 
+  const handleSystemUnlock = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const ok = await window.api.vault.unlock('');
+      if (ok) {
+        onUnlockSuccess();
+        onClose();
+      } else {
+        setError(t('vault.incorrect') || 'Failed to unlock with Windows DPAPI');
+      }
+    } catch (err: any) {
+      setError(err.message || 'System unlock error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSwitchToSystem = async () => {
     setError(null);
     setLoading(true);
@@ -233,7 +251,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
         {/* Description */}
         <p className="text-xs text-slate-400 leading-relaxed">
-          {mode === 'unlock' && t('vault.unlockDesc')}
+          {mode === 'unlock' && (vaultStatus.protectionMode === 'system' ? t('vault.systemModeDesc') : t('vault.unlockDesc'))}
           {mode === 'setup' && t('vault.setDesc')}
           {mode === 'recover' && t('vault.recoverDesc')}
         </p>
@@ -255,53 +273,71 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
         {/* MODE: UNLOCK */}
         {mode === 'unlock' && (
-          <div className="space-y-4">
-            {vaultStatus.biometricsAvailable && vaultStatus.biometricsEnabled && (
-              <div className={`p-3.5 rounded-xl border flex flex-col items-center space-y-2.5 text-center ${
-                isLight ? 'bg-sky-50 border-sky-200' : 'bg-sky-950/20 border-sky-500/30'
+          vaultStatus.protectionMode === 'system' ? (
+            <div className="space-y-4">
+              <div className={`p-4 rounded-xl border flex flex-col items-center space-y-3 text-center ${
+                isLight ? 'bg-sky-50/70 border-sky-200 text-slate-800' : 'bg-[#1a2230] border-sky-500/30 text-slate-200'
               }`}>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={handleBiometricUnlock}
-                  className="w-full py-2 px-4 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-semibold shadow transition-all flex items-center justify-center space-x-2"
-                >
-                  <Fingerprint className="w-4 h-4" />
-                  <span>{loading ? t('vault.processing') : t('vault.unlockWithHello')}</span>
-                </button>
-                <span className="text-[11px] text-slate-400 font-medium">— {t('vault.orEnterPassword')} —</span>
-              </div>
-            )}
+                <div className="w-12 h-12 rounded-full bg-sky-500/15 flex items-center justify-center text-sky-400">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold text-sky-400">
+                    {t('vault.systemModeTitle')}
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-1 max-w-xs leading-relaxed">
+                    {t('vault.systemModeDesc')}
+                  </p>
+                </div>
 
-            <form onSubmit={handleUnlockSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">{t('vault.masterPassword')}</label>
-                <input
-                  type="password"
-                  autoFocus={!vaultStatus.biometricsEnabled}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className={`w-full border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
-                    isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
-                  }`}
-                />
+                {vaultStatus.biometricsAvailable && vaultStatus.biometricsEnabled ? (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={handleBiometricUnlock}
+                    className="w-full py-2.5 px-4 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-semibold shadow transition-all flex items-center justify-center space-x-2"
+                  >
+                    <Fingerprint className="w-4 h-4" />
+                    <span>{loading ? t('vault.processing') : t('vault.unlockWithHello')}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={handleSystemUnlock}
+                    className="w-full py-2.5 px-4 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-semibold shadow transition-all flex items-center justify-center space-x-2"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>{loading ? t('vault.processing') : t('vault.unlockSystem')}</span>
+                  </button>
+                )}
+
+                {vaultStatus.biometricsAvailable && vaultStatus.biometricsEnabled && (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={handleSystemUnlock}
+                    className="text-[11px] text-slate-400 hover:text-slate-200 hover:underline flex items-center space-x-1"
+                  >
+                    <span>{t('vault.unlockSystem')}</span>
+                  </button>
+                )}
               </div>
 
-              <div className="flex items-center justify-between text-xs">
+              <div className="pt-2 flex items-center justify-between border-t border-slate-500/20">
                 <button
                   type="button"
                   onClick={() => {
                     setError(null);
-                    setMode('recover');
+                    setMode('setup');
+                    regenerateKey('mnemonic');
                   }}
-                  className="text-sky-500 hover:underline hover:text-sky-400 text-[11px]"
+                  className="text-[11px] text-amber-500 hover:text-amber-400 hover:underline flex items-center space-x-1 font-medium"
                 >
-                  {t('vault.forgotPassword')}
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>{t('vault.switchToPasswordMode')}</span>
                 </button>
-              </div>
 
-              <div className="pt-2 flex items-center justify-end space-x-2">
                 <button
                   type="button"
                   onClick={onClose}
@@ -309,16 +345,74 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                 >
                   {t('modal.cancel')}
                 </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-semibold shadow"
-                >
-                  {loading ? t('vault.processing') : t('vault.unlock')}
-                </button>
               </div>
-            </form>
-          </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {vaultStatus.biometricsAvailable && vaultStatus.biometricsEnabled && (
+                <div className={`p-3.5 rounded-xl border flex flex-col items-center space-y-2.5 text-center ${
+                  isLight ? 'bg-sky-50 border-sky-200' : 'bg-sky-950/20 border-sky-500/30'
+                }`}>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={handleBiometricUnlock}
+                    className="w-full py-2 px-4 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-semibold shadow transition-all flex items-center justify-center space-x-2"
+                  >
+                    <Fingerprint className="w-4 h-4" />
+                    <span>{loading ? t('vault.processing') : t('vault.unlockWithHello')}</span>
+                  </button>
+                  <span className="text-[11px] text-slate-400 font-medium">— {t('vault.orEnterPassword')} —</span>
+                </div>
+              )}
+
+              <form onSubmit={handleUnlockSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">{t('vault.masterPassword')}</label>
+                  <input
+                    type="password"
+                    autoFocus={!vaultStatus.biometricsEnabled}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`w-full border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-[#272727] border-[#3d3d3d] text-white'
+                    }`}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setMode('recover');
+                    }}
+                    className="text-sky-500 hover:underline hover:text-sky-400 text-[11px]"
+                  >
+                    {t('vault.forgotPassword')}
+                  </button>
+                </div>
+
+                <div className="pt-2 flex items-center justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-3 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-500/10"
+                  >
+                    {t('modal.cancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-semibold shadow"
+                  >
+                    {loading ? t('vault.processing') : t('vault.unlock')}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )
         )}
 
         {/* MODE: SETUP MASTER PASSWORD WITH RECOVERY KEY */}

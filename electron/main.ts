@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, clipboard, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, clipboard, shell, session } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { VaultManager } from './vault/VaultManager';
@@ -8,6 +8,7 @@ import { SFTPManager } from './ssh/SFTPManager';
 import { MonitorService } from './ssh/MonitorService';
 import { TunnelManager } from './ssh/TunnelManager';
 import { AutoUpdaterManager } from './updater/AutoUpdaterManager';
+import { LocalFSManager } from './fs/LocalFSManager';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -15,9 +16,48 @@ const biometricService = new BiometricService();
 const vault = new VaultManager(biometricService);
 const sshManager = new SSHClientManager();
 const sftpManager = new SFTPManager(sshManager);
+const localFSManager = new LocalFSManager();
 const monitorService = new MonitorService(sshManager);
 const tunnelManager = new TunnelManager(sshManager);
 const autoUpdaterManager = new AutoUpdaterManager();
+
+// Global SSH & Monitor event forwarders (singleton registration prevents duplicate listeners)
+sshManager.on('data', (payload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('ssh:data', payload);
+  }
+});
+
+sshManager.on('ssh-error', (payload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('ssh:error', payload);
+  }
+});
+
+sshManager.on('error', (payload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('ssh:error', payload);
+  }
+});
+
+sshManager.on('closed', (payload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('ssh:closed', payload);
+  }
+  monitorService.stopMonitoring(payload.sessionId);
+});
+
+sshManager.on('directory-changed', (payload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('ssh:directory-changed', payload);
+  }
+});
+
+monitorService.on('stats', (payload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('monitor:stats', payload);
+  }
+});
 
 function createWindow() {
   const iconCandidates = [
@@ -50,14 +90,17 @@ function createWindow() {
   const isDev = process.env.NODE_ENV !== 'production' && !app.isPackaged;
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL('http://127.0.0.1:5173');
   } else {
     mainWindow.loadFile(path.join(app.getAppPath(), 'dist/index.html'));
   }
 
   // Security: Prevent window navigation to untrusted external URLs
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const isAllowedInternal = url.startsWith('http://localhost:5173') || url.startsWith('file://');
+    const isAllowedInternal =
+      url.startsWith('http://127.0.0.1:5173') ||
+      url.startsWith('http://localhost:5173') ||
+      url.startsWith('file://');
     if (!isAllowedInternal) {
       event.preventDefault();
       try {
@@ -82,33 +125,6 @@ function createWindow() {
       // ignore invalid url
     }
     return { action: 'deny' };
-  });
-
-  // SSH Manager event forwarders
-  sshManager.on('data', (payload) => {
-    mainWindow?.webContents.send('ssh:data', payload);
-  });
-
-  sshManager.on('ssh-error', (payload) => {
-    mainWindow?.webContents.send('ssh:error', payload);
-  });
-
-  sshManager.on('error', (payload) => {
-    mainWindow?.webContents.send('ssh:error', payload);
-  });
-
-  sshManager.on('closed', (payload) => {
-    mainWindow?.webContents.send('ssh:closed', payload);
-    monitorService.stopMonitoring(payload.sessionId);
-  });
-
-  sshManager.on('directory-changed', (payload) => {
-    mainWindow?.webContents.send('ssh:directory-changed', payload);
-  });
-
-  // Monitor event forwarder
-  monitorService.on('stats', (payload) => {
-    mainWindow?.webContents.send('monitor:stats', payload);
   });
 
   autoUpdaterManager.setWindow(mainWindow);
@@ -187,10 +203,13 @@ function registerIpcHandlers() {
   ipcMain.handle('ssh:testConnection', async (_, host) => {
     return sshManager.testConnection(host);
   });
+  ipcMain.handle('ssh:getCurrentDirectory', (_, sessionId) => {
+    return sshManager.getCurrentDirectory(sessionId);
+  });
 
   // SFTP
-  ipcMain.handle('sftp:list', async (_, sessionId, remotePath) => {
-    return sftpManager.listDirectory(sessionId, remotePath);
+  ipcMain.handle('sftp:list', async (_, sessionId, remotePath, forceRefresh) => {
+    return sftpManager.listDirectory(sessionId, remotePath, forceRefresh);
   });
   ipcMain.handle('sftp:readFile', async (_, sessionId, remotePath) => {
     return sftpManager.readFile(sessionId, remotePath);
@@ -212,6 +231,41 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('sftp:chmod', async (_, sessionId, remotePath, mode) => {
     return sftpManager.chmod(sessionId, remotePath, mode);
+  });
+  ipcMain.handle('sftp:copyFile', async (_, sessionId, srcPath, destPath) => {
+    return sftpManager.copyFile(sessionId, srcPath, destPath);
+  });
+  ipcMain.handle('sftp:uploadFile', async (_, sessionId, localPath, remotePath) => {
+    return sftpManager.uploadFile(sessionId, localPath, remotePath);
+  });
+  ipcMain.handle('sftp:downloadFile', async (_, sessionId, remotePath, localPath) => {
+    return sftpManager.downloadFile(sessionId, remotePath, localPath);
+  });
+
+  // Local Files
+  ipcMain.handle('local:list', async (_, dirPath) => {
+    return localFSManager.listDirectory(dirPath);
+  });
+  ipcMain.handle('local:getDrives', async () => {
+    return localFSManager.getDrives();
+  });
+  ipcMain.handle('local:mkdir', async (_, dirPath) => {
+    return localFSManager.createDirectory(dirPath);
+  });
+  ipcMain.handle('local:delete', async (_, targetPath) => {
+    return localFSManager.deleteFile(targetPath);
+  });
+  ipcMain.handle('local:rename', async (_, oldPath, newPath) => {
+    return localFSManager.renameFile(oldPath, newPath);
+  });
+  ipcMain.handle('local:copy', async (_, srcPath, destPath) => {
+    return localFSManager.copyFile(srcPath, destPath);
+  });
+  ipcMain.handle('local:readFile', async (_, targetPath) => {
+    return localFSManager.readFile(targetPath);
+  });
+  ipcMain.handle('local:writeFile', async (_, targetPath, content) => {
+    return localFSManager.writeFile(targetPath, content);
   });
 
   // Monitor
@@ -270,6 +324,20 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(async () => {
+  // Allow external widgets (e.g. YooMoney fundraise widget) to be framed securely
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = { ...details.responseHeaders };
+    const lowerUrl = details.url.toLowerCase();
+    if (lowerUrl.includes('yoomoney.ru') || lowerUrl.includes('tips.tips')) {
+      for (const header of Object.keys(responseHeaders)) {
+        if (header.toLowerCase() === 'x-frame-options') {
+          delete responseHeaders[header];
+        }
+      }
+    }
+    callback({ responseHeaders });
+  });
+
   await vault.init();
   registerIpcHandlers();
   createWindow();

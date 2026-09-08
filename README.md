@@ -108,7 +108,7 @@ BesTTY Desktop Architecture
 
 ### 1. Clone & Install Dependencies
 ```bash
-git clone https://github.com/BesTTY/BesTTY.git
+git clone https://github.com/bazmadev/BesTTY.git
 cd BesTTY
 npm install
 ```

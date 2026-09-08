@@ -3,39 +3,71 @@ import { ServerMetrics, RemoteProcess, DiskMetric } from '../../src/types';
 import { EventEmitter } from 'events';
 
 export class MonitorService extends EventEmitter {
-  private intervals: Map<string, NodeJS.Timeout> = new Map();
+  private activeTimers: Map<string, NodeJS.Timeout> = new Map();
+  private inFlightSessions: Set<string> = new Set();
+  private runningSessions: Set<string> = new Set();
 
   constructor(private sshManager: SSHClientManager) {
     super();
   }
 
   public startMonitoring(sessionId: string, intervalMs: number = 3000): void {
-    if (this.intervals.has(sessionId)) {
+    if (this.runningSessions.has(sessionId)) {
       return;
     }
+    this.runningSessions.add(sessionId);
 
-    const runCheck = async () => {
+    const scheduleNext = () => {
+      if (!this.runningSessions.has(sessionId)) return;
+      const timer = setTimeout(async () => {
+        if (!this.runningSessions.has(sessionId)) return;
+        if (this.inFlightSessions.has(sessionId)) {
+          // If previous check is still in flight, skip this tick to avoid OpenSSH channel exhaustion
+          scheduleNext();
+          return;
+        }
+
+        this.inFlightSessions.add(sessionId);
+        try {
+          const stats = await this.collectStats(sessionId);
+          if (stats && this.runningSessions.has(sessionId)) {
+            this.emit('stats', { sessionId, ...stats });
+          }
+        } catch (e) {
+          // Silently skip if connection closed or busy
+        } finally {
+          this.inFlightSessions.delete(sessionId);
+          scheduleNext();
+        }
+      }, intervalMs);
+
+      this.activeTimers.set(sessionId, timer);
+    };
+
+    // Run first check immediately
+    (async () => {
+      this.inFlightSessions.add(sessionId);
       try {
         const stats = await this.collectStats(sessionId);
-        if (stats) {
+        if (stats && this.runningSessions.has(sessionId)) {
           this.emit('stats', { sessionId, ...stats });
         }
       } catch (e) {
-        // Silently skip if connection closed or busy
+        // ignore
+      } finally {
+        this.inFlightSessions.delete(sessionId);
+        scheduleNext();
       }
-    };
-
-    // Run immediately once, then set interval
-    runCheck();
-    const timer = setInterval(runCheck, intervalMs);
-    this.intervals.set(sessionId, timer);
+    })();
   }
 
   public stopMonitoring(sessionId: string): void {
-    const timer = this.intervals.get(sessionId);
+    this.runningSessions.delete(sessionId);
+    this.inFlightSessions.delete(sessionId);
+    const timer = this.activeTimers.get(sessionId);
     if (timer) {
-      clearInterval(timer);
-      this.intervals.delete(sessionId);
+      clearTimeout(timer);
+      this.activeTimers.delete(sessionId);
     }
   }
 
@@ -48,21 +80,61 @@ export class MonitorService extends EventEmitter {
     const cmd = "sh -c 'echo \"===LOAD===\"; cat /proc/loadavg 2>/dev/null; uptime 2>/dev/null; echo \"===MEM===\"; free -m 2>/dev/null; echo \"===DF===\"; df -m -x tmpfs -x devtmpfs -x overlay -x squashfs 2>/dev/null; echo \"===PS===\"; ps -eo pid,user,%cpu,%mem,comm --sort=-%cpu 2>/dev/null | head -n 12'";
 
     return new Promise((resolve) => {
-      session.client.exec(cmd, (err, stream) => {
-        if (err) return resolve(null);
+      let isSettled = false;
+      let activeStream: any = null;
 
-        let output = '';
-        stream.on('data', (d: Buffer) => {
-          output += d.toString('utf-8');
+      // Safety timeout: kill channel if command hangs longer than 5 seconds
+      const timeoutTimer = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          try {
+            if (activeStream) activeStream.close();
+          } catch {}
+          resolve(null);
+        }
+      }, 5000);
+
+      try {
+        session.client.exec(cmd, (err, stream) => {
+          if (err || !stream) {
+            if (!isSettled) {
+              isSettled = true;
+              clearTimeout(timeoutTimer);
+              resolve(null);
+            }
+            return;
+          }
+
+          activeStream = stream;
+          let output = '';
+          stream.on('data', (d: Buffer) => {
+            output += d.toString('utf-8');
+          });
+
+          stream.on('close', () => {
+            if (!isSettled) {
+              isSettled = true;
+              clearTimeout(timeoutTimer);
+              const parsed = this.parseOutput(output);
+              resolve(parsed);
+            }
+          });
+
+          stream.on('error', () => {
+            if (!isSettled) {
+              isSettled = true;
+              clearTimeout(timeoutTimer);
+              resolve(null);
+            }
+          });
         });
-
-        stream.on('close', () => {
-          const parsed = this.parseOutput(output);
-          resolve(parsed);
-        });
-
-        stream.on('error', () => resolve(null));
-      });
+      } catch {
+        if (!isSettled) {
+          isSettled = true;
+          clearTimeout(timeoutTimer);
+          resolve(null);
+        }
+      }
     });
   }
 

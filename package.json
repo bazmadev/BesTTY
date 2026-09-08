@@ -1,15 +1,18 @@
 {
   "name": "bestty",
   "version": "1.0.0",
-  "description": "Modern Next-Gen Open-Source SSH/SFTP Client for Windows 10/11",
+  "description": "Modern Next-Gen Open-Source SSH/SFTP Client for Windows, Linux & macOS",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "app": "npm run build:electron && concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "app": "npm run build:electron && concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "start": "npm run app",
-    "dist": "npm run build && npm run build:electron && electron-builder"
+    "dist": "npm run build && npm run build:electron && electron-builder",
+    "dist:win": "npm run build && npm run build:electron && electron-builder --win",
+    "dist:mac": "npm run build && npm run build:electron && electron-builder --mac",
+    "dist:linux": "npm run build && npm run build:electron && electron-builder --linux"
   },
   "keywords": [
     "ssh",
@@ -21,7 +24,7 @@
     "windows",
     "fluent"
   ],
-  "author": "BesTTY Team",
+  "author": "Bazma Dev <https://t.me/bazmadev>",
   "license": "MIT",
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -78,8 +81,8 @@
     ],
     "publish": {
       "provider": "github",
-      "owner": "bestty",
-      "repo": "bestty"
+      "owner": "bazmadev",
+      "repo": "BesTTY"
     },
     "win": {
       "icon": "public/icon.ico",
@@ -87,6 +90,12 @@
       "target": [
         {
           "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64"
           ]
@@ -102,6 +111,63 @@
       "installerIcon": "public/icon.ico",
       "uninstallerIcon": "public/icon.ico",
       "runAfterFinish": true
+    },
+    "mac": {
+      "icon": "public/icon.png",
+      "category": "public.app-category.developer-tools",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "linux": {
+      "icon": "public/icon.png",
+      "category": "Development",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "maintainer": "Bazma Dev <https://t.me/bazmadev>",
+      "synopsis": "Modern Next-Gen SSH/SFTP Client",
+      "description": "Modern Next-Gen Open-Source SSH/SFTP Client"
     }
   }
 }

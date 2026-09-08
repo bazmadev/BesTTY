@@ -1,4 +1,4 @@
-import { HostProfile, Snippet, TunnelConfig, BesTTYSettings, SFTPFile, ServerMetrics, RemoteProcess, VaultStatus, UpdateState } from './index';
+import { HostProfile, Snippet, TunnelConfig, BesTTYSettings, SFTPFile, ServerMetrics, RemoteProcess, VaultStatus, UpdateState, LocalDrive, VaultProtectionMode } from './index';
 
 declare global {
   interface Window {
@@ -38,9 +38,10 @@ declare global {
         onClosed: (callback: (payload: { sessionId: string }) => void) => () => void;
         onError: (callback: (payload: { sessionId: string; error: string }) => void) => () => void;
         onDirectoryChanged: (callback: (payload: { sessionId: string; directory: string }) => void) => () => void;
+        getCurrentDirectory: (sessionId: string) => Promise<string | undefined>;
       };
       sftp: {
-        list: (sessionId: string, path?: string) => Promise<{ currentPath: string; files: SFTPFile[] }>;
+        list: (sessionId: string, path?: string, forceRefresh?: boolean) => Promise<{ currentPath: string; files: SFTPFile[] }>;
         readFile: (sessionId: string, remotePath: string) => Promise<string>;
         writeFile: (sessionId: string, remotePath: string, content: string) => Promise<void>;
         sudoWriteFile: (sessionId: string, remotePath: string, content: string) => Promise<void>;
@@ -48,6 +49,19 @@ declare global {
         delete: (sessionId: string, remotePath: string, isDirectory: boolean) => Promise<void>;
         rename: (sessionId: string, oldPath: string, newPath: string) => Promise<void>;
         chmod: (sessionId: string, remotePath: string, mode: number) => Promise<void>;
+        copyFile: (sessionId: string, srcPath: string, destPath: string) => Promise<void>;
+        uploadFile: (sessionId: string, localPath: string, remotePath: string) => Promise<void>;
+        downloadFile: (sessionId: string, remotePath: string, localPath: string) => Promise<void>;
+      };
+      local: {
+        list: (dirPath?: string) => Promise<{ currentPath: string; files: SFTPFile[]; drives: LocalDrive[] }>;
+        getDrives: () => Promise<LocalDrive[]>;
+        mkdir: (dirPath: string) => Promise<void>;
+        delete: (targetPath: string) => Promise<void>;
+        rename: (oldPath: string, newPath: string) => Promise<void>;
+        copy: (srcPath: string, destPath: string) => Promise<void>;
+        readFile: (targetPath: string) => Promise<string>;
+        writeFile: (targetPath: string, content: string) => Promise<void>;
       };
       monitor: {
         start: (sessionId: string) => Promise<void>;
@@ -83,3 +97,4 @@ declare global {
     };
   }
 }
+

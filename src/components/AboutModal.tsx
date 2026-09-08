@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Heart, Sparkles, Terminal, FolderTree, Code, Activity, 
-  ShieldCheck, Network, Copy, Check, ExternalLink, CreditCard, Coins,
-  Download, RefreshCw, Loader2, AlertCircle
+  ShieldCheck, Network, Check, ExternalLink, CreditCard, Coins,
+  Download, RefreshCw, Loader2, AlertCircle, Send, User, Star, QrCode
 } from 'lucide-react';
 import { useTranslation } from '../i18n';
 import { UpdateState } from '../types';
+import appLogo from '../assets/logo.png';
+import boostyQr from '../assets/boosty_qr.png';
+import tipsQr from '../assets/tips_qr.png';
+import yoomoneyQr from '../assets/yoomoney_qr.png';
 
 interface AboutModalProps {
   isOpen: boolean;
@@ -22,7 +26,11 @@ export const AboutModal: React.FC<AboutModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'mission' | 'updates' | 'donate'>(initialTab);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [activeQr, setActiveQr] = useState<'tips' | 'boosty' | 'yoomoney' | null>(null);
+
+  const toggleQr = (key: 'tips' | 'boosty' | 'yoomoney') => {
+    setActiveQr((prev) => (prev === key ? null : key));
+  };
 
   // OTA Updater state inside About modal
   const [updateState, setUpdateState] = useState<UpdateState>({
@@ -65,16 +73,6 @@ export const AboutModal: React.FC<AboutModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleCopy = (text: string, key: string) => {
-    if (window.api?.clipboard) {
-      window.api.clipboard.writeText(text);
-    } else {
-      navigator.clipboard.writeText(text);
-    }
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  };
-
   const solvedTasks = [
     {
       icon: <Terminal className="w-4 h-4 text-sky-400 flex-shrink-0" />,
@@ -108,32 +106,9 @@ export const AboutModal: React.FC<AboutModalProps> = ({
     },
   ];
 
-  const cryptoWallets = [
-    {
-      name: 'USDT (TRC-20)',
-      address: 'TXq7s92mQZk9vQ4m8L7wP91vX5aK8j1eNp',
-      network: 'Tron Network',
-    },
-    {
-      name: 'TON (The Open Network)',
-      address: 'EQDYP_1k9Vxm8qW5aK7sQ92mZk8vP91wX5aK8j1eNp4mL7wP',
-      network: 'TON',
-    },
-    {
-      name: 'Bitcoin (BTC)',
-      address: 'bc1q9v8k7s6m5w4a3x2z1y0p9o8n7m6l5k4j3h2g1f',
-      network: 'Bitcoin Native SegWit',
-    },
-    {
-      name: 'Ethereum (ETH / ERC-20)',
-      address: '0x71C8F39B92b5e28a47B79B51E2b4352f195861F3',
-      network: 'Ethereum Mainnet',
-    },
-  ];
-
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 select-none">
-      <div className={`border w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden transition-all ${
+      <div className={`border w-full max-w-2xl sm:max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden transition-all ${
         isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-[#1c1c1c] border-[#383838] text-white'
       }`}>
         {/* Header Hero with BesTTY Logo */}
@@ -147,7 +122,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
 
           <div className="flex items-center space-x-4 relative z-10">
             <img
-              src="/logo.png"
+              src={appLogo}
               alt="BesTTY Logo"
               className="w-16 h-16 rounded-2xl object-contain drop-shadow-xl shadow-sky-500/20 border border-white/10"
             />
@@ -271,6 +246,88 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Author & Creator Card */}
+              <div className={`p-4 rounded-xl border space-y-3 transition-colors ${
+                isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#202020] border-[#303030]'
+              }`}>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/20 flex-shrink-0">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <h4 className="text-sm font-bold tracking-tight">{t('about.authorTitle')}</h4>
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                          {t('about.authorRole')}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {t('about.authorTelegramDesc')}
+                      </p>
+                    </div>
+                  </div>
+
+                  <a
+                    href="https://t.me/bazmadev"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-400 text-xs font-semibold flex items-center space-x-1.5 transition-colors flex-shrink-0"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Telegram</span>
+                    <ExternalLink className="w-3 h-3 ml-0.5" />
+                  </a>
+                </div>
+
+                <p className="text-xs leading-relaxed text-slate-300">
+                  {t('about.authorBio')}
+                </p>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-500/15">
+                  <a
+                    href="https://t.me/bazmadev"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-[#229ED9]/20 hover:bg-[#229ED9]/30 text-[#229ED9] border border-[#229ED9]/30 text-xs font-medium flex items-center space-x-1.5 transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{t('about.authorTelegramBtn')}</span>
+                  </a>
+
+                  <a
+                    href="https://tips.tips/000483287"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 text-xs font-medium flex items-center space-x-1.5 transition-colors"
+                  >
+                    <Coins className="w-3.5 h-3.5" />
+                    <span>tips.tips</span>
+                    <ExternalLink className="w-3 h-3 ml-0.5" />
+                  </a>
+
+                  <a
+                    href="https://yoomoney.ru/quickpay/fundraise/button?billNumber=1K5D69JOE81.260907"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/30 text-xs font-medium flex items-center space-x-1.5 transition-colors"
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>ЮMoney</span>
+                    <ExternalLink className="w-3 h-3 ml-0.5" />
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('donate')}
+                    className="px-3 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-xs font-medium flex items-center space-x-1.5 transition-colors cursor-pointer"
+                  >
+                    <Heart className="w-3.5 h-3.5 fill-rose-500/30" />
+                    <span>{t('about.tabDonate')}</span>
+                  </button>
                 </div>
               </div>
             </>
@@ -448,92 +505,230 @@ export const AboutModal: React.FC<AboutModalProps> = ({
 
               {/* Direct Donation Channels */}
               <div className="space-y-4">
-                {/* Bank Card / СБП */}
-                <div className={`p-4 rounded-xl border space-y-3 ${
+                {/* Author & Community Quick Connect */}
+                <div className={`p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
                   isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#222222] border-[#303030]'
                 }`}>
-                  <div className="flex items-center space-x-2 text-xs font-semibold text-emerald-400">
-                    <CreditCard className="w-4 h-4" />
-                    <span>{t('about.donateCard')}</span>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md flex-shrink-0">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-xs flex items-center space-x-2">
+                        <span>Bazma Dev</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                          @bazmadev
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {t('about.authorTelegramDesc')}
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-400">
-                    Быстрый перевод через Систему быстрых платежей (СБП), банковские карты МИР / Visa / MasterCard или ЮMoney.
-                  </p>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <a
-                      href="https://boosty.to"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow transition-all"
-                    >
-                      <span>Boosty</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                    <a
-                      href="https://yoomoney.ru"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow transition-all"
-                    >
-                      <span>ЮMoney / Банковская карта</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                    <a
-                      href="https://github.com/sponsors"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold flex items-center space-x-1.5 shadow transition-all"
-                    >
-                      <span>GitHub Sponsors</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
+
+                  <a
+                    href="https://t.me/bazmadev"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-1.5 rounded-lg bg-[#229ED9] hover:bg-[#1f8ec4] text-white text-xs font-semibold flex items-center space-x-1.5 shadow transition-all self-stretch sm:self-auto justify-center"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{t('about.authorTelegramBtn')}</span>
+                    <ExternalLink className="w-3 h-3 ml-0.5" />
+                  </a>
                 </div>
 
-                {/* Cryptocurrency Wallets */}
+                {/* tips.tips Card */}
                 <div className={`p-4 rounded-xl border space-y-3 ${
-                  isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#222222] border-[#303030]'
+                  isLight ? 'bg-emerald-50/50 border-emerald-200' : 'bg-emerald-950/20 border-emerald-500/20'
                 }`}>
-                  <div className="flex items-center space-x-2 text-xs font-semibold text-amber-400">
-                    <Coins className="w-4 h-4" />
-                    <span>{t('about.donateCrypto')}</span>
-                  </div>
-
-                  <div className="space-y-2 font-mono text-xs">
-                    {cryptoWallets.map((w, idx) => (
-                      <div
-                        key={idx}
-                        className={`p-2.5 rounded-lg border flex items-center justify-between transition-colors ${
-                          isLight ? 'bg-white border-slate-300' : 'bg-[#181818] border-[#383838]'
-                        }`}
-                      >
-                        <div className="truncate flex-1 mr-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-bold text-sky-400">{w.name}</span>
-                            <span className="text-[10px] text-slate-500 font-sans">({w.network})</span>
-                          </div>
-                          <div className="text-[11px] text-slate-400 truncate select-all">{w.address}</div>
-                        </div>
-
-                        <button
-                          onClick={() => handleCopy(w.address, w.name)}
-                          className="px-2.5 py-1 rounded bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/30 text-sky-400 text-[11px] font-sans font-medium flex items-center space-x-1 flex-shrink-0 transition-all"
-                        >
-                          {copiedKey === w.name ? (
-                            <>
-                              <Check className="w-3 h-3 text-emerald-400" />
-                              <span className="text-emerald-400">{t('about.copySuccess')}</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3 h-3" />
-                              <span>{t('about.copyButton')}</span>
-                            </>
-                          )}
-                        </button>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400">
+                        <Coins className="w-5 h-5" />
                       </div>
-                    ))}
+                      <div>
+                        <h4 className="text-sm font-bold text-emerald-400">{t('about.tipsTitle')}</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">{t('about.tipsDesc')}</p>
+                      </div>
+                    </div>
                   </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <a
+                      href="https://tips.tips/000483287"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center space-x-2 shadow-lg shadow-emerald-600/20 transition-all"
+                    >
+                      <Coins className="w-3.5 h-3.5" />
+                      <span>{t('about.tipsBtn')}</span>
+                      <ExternalLink className="w-3.5 h-3.5 ml-1" />
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleQr('tips')}
+                      className={`px-3.5 py-2 rounded-lg border text-xs font-semibold flex items-center space-x-1.5 transition-all cursor-pointer ${
+                        activeQr === 'tips'
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                          : isLight
+                            ? 'border-emerald-300 text-emerald-700 hover:bg-emerald-100/50'
+                            : 'border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10'
+                      }`}
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>{activeQr === 'tips' ? t('about.hideQr') : t('about.showQr')}</span>
+                    </button>
+                  </div>
+
+                  {activeQr === 'tips' && (
+                    <div className="pt-2 flex flex-col items-center animate-in fade-in zoom-in-95 duration-150">
+                      <div className="p-2 rounded-full bg-black/10 dark:bg-white/5 border border-emerald-500/30 shadow-2xl">
+                        <img
+                          src={tipsQr}
+                          alt="tips.tips QR code"
+                          className="w-48 h-48 rounded-full object-contain drop-shadow-md"
+                        />
+                      </div>
+                      <span className="text-[11px] text-slate-400 mt-2 text-center">
+                        {t('about.scanQrTip')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Boosty Subscription Card */}
+                <div className={`p-4 rounded-xl border space-y-3 ${
+                  isLight ? 'bg-orange-50/50 border-orange-200' : 'bg-orange-950/20 border-orange-500/20'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-orange-500/20 text-orange-400">
+                        <Star className="w-5 h-5 fill-orange-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-orange-400">{t('about.boostyTitle')}</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">{t('about.boostyDesc')}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <a
+                      href="https://boosty.to/bazma/purchase/4089239?ssource=DIRECT&share=subscription_link"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center space-x-2 shadow-lg shadow-orange-600/20 transition-all"
+                    >
+                      <Star className="w-3.5 h-3.5 fill-white" />
+                      <span>{t('about.boostySubBtn')}</span>
+                      <ExternalLink className="w-3.5 h-3.5 ml-1" />
+                    </a>
+                    <a
+                      href="https://boosty.to/bazma"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`px-3.5 py-2 rounded-lg border text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+                        isLight
+                          ? 'border-orange-300 text-orange-700 hover:bg-orange-100/50'
+                          : 'border-orange-500/30 text-orange-300 hover:bg-orange-500/10'
+                      }`}
+                    >
+                      <span>{t('about.boostyPageBtn')}</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleQr('boosty')}
+                      className={`px-3.5 py-2 rounded-lg border text-xs font-semibold flex items-center space-x-1.5 transition-all cursor-pointer ${
+                        activeQr === 'boosty'
+                          ? 'bg-orange-500/20 border-orange-500 text-orange-400'
+                          : isLight
+                            ? 'border-orange-300 text-orange-700 hover:bg-orange-100/50'
+                            : 'border-orange-500/30 text-orange-300 hover:bg-orange-500/10'
+                      }`}
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>{activeQr === 'boosty' ? t('about.hideQr') : t('about.showQr')}</span>
+                    </button>
+                  </div>
+
+                  {activeQr === 'boosty' && (
+                    <div className="pt-2 flex flex-col items-center animate-in fade-in zoom-in-95 duration-150">
+                      <div className="p-3 bg-white rounded-2xl shadow-xl border border-orange-500/30">
+                        <img
+                          src={boostyQr}
+                          alt="Boosty QR code"
+                          className="w-40 h-40 object-contain"
+                        />
+                      </div>
+                      <span className="text-[11px] text-slate-400 mt-2 text-center">
+                        {t('about.scanQrTip')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* YooMoney Card */}
+                <div className={`p-4 rounded-xl border space-y-3 ${
+                  isLight ? 'bg-purple-50/50 border-purple-200' : 'bg-purple-950/20 border-purple-500/20'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 rounded-lg bg-purple-500/20 text-purple-400">
+                        <CreditCard className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-purple-400">{t('about.yoomoneyTitle')}</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">{t('about.yoomoneyDesc')}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <a
+                      href="https://yoomoney.ru/quickpay/fundraise/button?billNumber=1K5D69JOE81.260907"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center space-x-2 shadow-lg shadow-purple-600/20 transition-all"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>{t('about.yoomoneyBtn')}</span>
+                      <ExternalLink className="w-3.5 h-3.5 ml-1" />
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleQr('yoomoney')}
+                      className={`px-3.5 py-2 rounded-lg border text-xs font-semibold flex items-center space-x-1.5 transition-all cursor-pointer ${
+                        activeQr === 'yoomoney'
+                          ? 'bg-purple-500/20 border-purple-500 text-purple-400'
+                          : isLight
+                            ? 'border-purple-300 text-purple-700 hover:bg-purple-100/50'
+                            : 'border-purple-500/30 text-purple-300 hover:bg-purple-500/10'
+                      }`}
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>{activeQr === 'yoomoney' ? t('about.hideQr') : t('about.showQr')}</span>
+                    </button>
+                  </div>
+
+                  {activeQr === 'yoomoney' && (
+                    <div className="pt-2 flex flex-col items-center animate-in fade-in zoom-in-95 duration-150">
+                      <div className="p-3 bg-white rounded-2xl shadow-xl border border-purple-500/30">
+                        <img
+                          src={yoomoneyQr}
+                          alt="YooMoney QR code"
+                          className="w-40 h-40 object-contain"
+                        />
+                      </div>
+                      <span className="text-[11px] text-slate-400 mt-2 text-center">
+                        {t('about.scanQrTip')}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

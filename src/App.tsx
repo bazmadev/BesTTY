@@ -1,24 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar } from './components/Sidebar';
 import { HostList } from './components/HostList';
-import { HostModal } from './components/HostModal';
-import { TerminalView } from './components/TerminalView';
-import { SftpView } from './components/SftpView';
-import { MonacoEditorView } from './components/MonacoEditorView';
-import { MonitorView } from './components/MonitorView';
-import { TunnelsView } from './components/TunnelsView';
-import { SnippetsView } from './components/SnippetsView';
-import { SettingsView } from './components/SettingsView';
+import { TabWorkspace } from './components/TabWorkspace';
 import { EmptyStateView } from './components/EmptyStateView';
-import { VaultModal } from './components/VaultModal';
-import { PasswordPromptModal, AuthPromptResult } from './components/PasswordPromptModal';
-import { HelpModal } from './components/HelpModal';
-import { AboutModal } from './components/AboutModal';
-import { TabItem, TabType, HostProfile, Snippet, TunnelConfig, BesTTYSettings, VaultStatus, UpdateState } from './types';
+import type { AuthPromptResult } from './components/PasswordPromptModal';
+
+// Code-split heavyweight views and modals via React.lazy
+const MonacoEditorView = React.lazy(() => import('./components/MonacoEditorView').then(m => ({ default: m.MonacoEditorView })));
+const MonitorView = React.lazy(() => import('./components/MonitorView').then(m => ({ default: m.MonitorView })));
+const TunnelsView = React.lazy(() => import('./components/TunnelsView').then(m => ({ default: m.TunnelsView })));
+const SnippetsView = React.lazy(() => import('./components/SnippetsView').then(m => ({ default: m.SnippetsView })));
+const SettingsView = React.lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
+const LocalFilesView = React.lazy(() => import('./components/LocalFilesView').then(m => ({ default: m.LocalFilesView })));
+const HostModal = React.lazy(() => import('./components/HostModal').then(m => ({ default: m.HostModal })));
+const VaultModal = React.lazy(() => import('./components/VaultModal').then(m => ({ default: m.VaultModal })));
+const PasswordPromptModal = React.lazy(() => import('./components/PasswordPromptModal').then(m => ({ default: m.PasswordPromptModal })));
+const HelpModal = React.lazy(() => import('./components/HelpModal').then(m => ({ default: m.HelpModal })));
+const AboutModal = React.lazy(() => import('./components/AboutModal').then(m => ({ default: m.AboutModal })));
+const ConnectHostModal = React.lazy(() => import('./components/ConnectHostModal').then(m => ({ default: m.ConnectHostModal })));
+
+import { 
+  TabItem, TabType, HostProfile, Snippet, TunnelConfig, 
+  BesTTYSettings, VaultStatus, UpdateState, SplitLayoutMode, PaneConfig, PaneViewType 
+} from './types';
 import { I18nProvider, useTranslation } from './i18n';
 import { parseSSHConnectionString } from './utils/sshParser';
+import { sanitizeRemotePath, formatCdCommand } from './utils/pathUtils';
 import { ShieldCheck, Lock, Radio, AlertCircle } from 'lucide-react';
+import appLogo from './assets/logo.png';
 
 const MainApp: React.FC = () => {
   const { t, locale } = useTranslation();
@@ -27,6 +37,18 @@ const MainApp: React.FC = () => {
   const [tabs, setTabs] = useState<TabItem[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>('hosts-view');
   const [currentView, setCurrentView] = useState<'hosts' | TabType>('hosts');
+  const [connectModalType, setConnectModalType] = useState<'terminal' | 'sftp' | 'monitor' | null>(null);
+  const [connectingHostInfo, setConnectingHostInfo] = useState<{ hostId: string; type: TabType } | null>(null);
+
+  // Track the most recent active tab for each view type
+  const lastActiveTabByType = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    const currentTab = tabs.find((t) => t.id === activeTabId);
+    if (currentTab) {
+      lastActiveTabByType.current[currentTab.type] = currentTab.id;
+    }
+  }, [activeTabId, tabs]);
 
   // About Modal State
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
@@ -60,6 +82,7 @@ const MainApp: React.FC = () => {
     confirmOnClose: true,
     sftpFollowTerminal: true,
     enableHardwareAcceleration: true,
+    folderClickMode: 'double',
   });
 
   // Windows System Theme Detection
@@ -100,6 +123,32 @@ const MainApp: React.FC = () => {
 
   // Active SSH Sessions cache: sessionId -> HostProfile
   const [activeSessions, setActiveSessions] = useState<Map<string, HostProfile>>(new Map());
+  const connectingHostIdsRef = useRef<Set<string>>(new Set());
+
+  // Listen for SSH session closed events from backend
+  useEffect(() => {
+    if (!window.api?.ssh?.onClosed) return;
+    const unsubscribe = window.api.ssh.onClosed(({ sessionId }: { sessionId: string }) => {
+      setActiveSessions((prev) => {
+        if (!prev.has(sessionId)) return prev;
+        const next = new Map(prev);
+        next.delete(sessionId);
+        return next;
+      });
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  const handleToggleTheme = async () => {
+    const nextTheme = isLight ? 'fluent-dark' : 'fluent-light';
+    const updated: BesTTYSettings = { ...settings, theme: nextTheme };
+    setSettings(updated);
+    if (window.api?.vault) {
+      await window.api.vault.saveSettings(updated);
+    }
+  };
 
   // Initial Load from Electron Vault
   const loadVaultData = async () => {
@@ -146,6 +195,27 @@ const MainApp: React.FC = () => {
 
   // Connect to Host
   const handleConnect = async (host: HostProfile, initialTabType: TabType = 'terminal') => {
+    // Prevent duplicate triggers (e.g. rapid double clicking)
+    if (host.id && connectingHostIdsRef.current.has(host.id)) {
+      return;
+    }
+
+    // If specialized tab (SFTP/Monitor) is requested and we already have an active session for this host, reuse it!
+    if (initialTabType !== 'terminal' && host.id) {
+      for (const [sId, sHost] of activeSessions.entries()) {
+        if (sHost.id === host.id) {
+          if (initialTabType === 'sftp') {
+            handleOpenSftp(sId);
+            return;
+          }
+          if (initialTabType === 'monitor') {
+            handleOpenMonitor(sId);
+            return;
+          }
+        }
+      }
+    }
+
     // If auth credentials not provided, prompt user with full multi-method prompt
     if (
       host.authType !== 'agent' &&
@@ -163,23 +233,32 @@ const MainApp: React.FC = () => {
   };
 
   const executeConnection = async (host: HostProfile, initialTabType: TabType = 'terminal') => {
+    if (host.id && connectingHostIdsRef.current.has(host.id)) {
+      return;
+    }
+    if (host.id) {
+      connectingHostIdsRef.current.add(host.id);
+      setConnectingHostInfo({ hostId: host.id, type: initialTabType });
+    }
+
     const sessionId = crypto.randomUUID();
 
     try {
-      // Connect backend SSH client
-      await window.api.ssh.connect(sessionId, host, 100, 30);
+      // Dynamically calculate initial PTY geometry from window size to prevent readline wrap desync
+      const initialCols = Math.max(80, Math.floor((window.innerWidth - 60) / 9));
+      const initialRows = Math.max(24, Math.floor((window.innerHeight - 70) / 18));
+      await window.api.ssh.connect(sessionId, host, initialCols, initialRows);
 
       setActiveSessions((prev) => new Map(prev).set(sessionId, host));
 
-      const terminalTab: TabItem = {
-        id: `tab-${sessionId}-terminal`,
-        type: 'terminal',
-        title: `${host.name || host.host} (Terminal)`,
-        hostId: host.id,
-        sessionId,
-      };
-
       if (initialTabType === 'terminal') {
+        const terminalTab: TabItem = {
+          id: `tab-${sessionId}-terminal`,
+          type: 'terminal',
+          title: `${host.name || host.host} (Terminal)`,
+          hostId: host.id,
+          sessionId,
+        };
         setTabs((prev) => [...prev, terminalTab]);
         setActiveTabId(terminalTab.id);
         setCurrentView('terminal');
@@ -191,12 +270,20 @@ const MainApp: React.FC = () => {
           hostId: host.id,
           sessionId,
         };
-        setTabs((prev) => [...prev, terminalTab, specializedTab]);
+        // ONLY open the specialized tab - no unrequested duplicate terminal tab
+        setTabs((prev) => [...prev, specializedTab]);
         setActiveTabId(specializedTab.id);
         setCurrentView(initialTabType);
       }
     } catch (err: any) {
       alert(`SSH Connection Failed to ${host.host}: ${err.message}`);
+    } finally {
+      if (host.id) {
+        setTimeout(() => {
+          connectingHostIdsRef.current.delete(host.id);
+        }, 600);
+      }
+      setConnectingHostInfo(null);
     }
   };
 
@@ -240,7 +327,7 @@ const MainApp: React.FC = () => {
   };
 
   // Duplicate Tab Feature (⚡ Lightning button)
-  const handleDuplicateSession = (targetSessionId?: string) => {
+  const handleDuplicateSession = useCallback((targetSessionId?: string) => {
     const activeTab = tabs.find((t) => t.id === activeTabId);
     const sid = targetSessionId || activeTab?.sessionId;
     if (!sid) return;
@@ -249,89 +336,101 @@ const MainApp: React.FC = () => {
     if (host) {
       executeConnection(host, 'terminal');
     }
-  };
+  }, [tabs, activeTabId, activeSessions]);
+
+  // Reconnect SSH Session
+  const handleReconnectSession = useCallback(async (sessionId: string, host: HostProfile) => {
+    setActiveSessions((prev) => new Map(prev).set(sessionId, host));
+  }, []);
 
   // Open Remote File in In-Place Monaco Editor
-  const handleOpenFileInEditor = (sessionId: string, filePath: string, fileName: string) => {
+  const handleOpenFileInEditor = useCallback((sessionId: string, filePath: string, fileName: string) => {
     const editorTabId = `editor-${sessionId}-${filePath}`;
-    const existing = tabs.find((t) => t.id === editorTabId);
+    setTabs((prev) => {
+      const existing = prev.find((t) => t.id === editorTabId);
+      if (existing) {
+        setActiveTabId(existing.id);
+        setCurrentView('editor');
+        return prev;
+      }
 
-    if (existing) {
-      setActiveTabId(existing.id);
+      const newTab: TabItem = {
+        id: editorTabId,
+        type: 'editor',
+        title: fileName,
+        sessionId,
+        filePath,
+      };
+
+      setActiveTabId(newTab.id);
       setCurrentView('editor');
-      return;
-    }
-
-    const newTab: TabItem = {
-      id: editorTabId,
-      type: 'editor',
-      title: fileName,
-      sessionId,
-      filePath,
-    };
-
-    setTabs((prev) => [...prev, newTab]);
-    setActiveTabId(newTab.id);
-    setCurrentView('editor');
-  };
+      return [...prev, newTab];
+    });
+  }, []);
 
   // Open SFTP tab for existing session
-  const handleOpenSftp = (sessionId: string) => {
+  const handleOpenSftp = useCallback((sessionId: string, targetPath?: string) => {
     const sftpTabId = `sftp-${sessionId}`;
-    const existing = tabs.find((t) => t.id === sftpTabId);
+    setTabs((prev) => {
+      const existing = prev.find((t) => t.id === sftpTabId);
+      if (existing) {
+        setActiveTabId(existing.id);
+        setCurrentView('sftp');
+        if (targetPath) {
+          return prev.map((t) => (t.id === existing.id ? { ...t, initialPath: targetPath } : t));
+        }
+        return prev;
+      }
 
-    if (existing) {
-      setActiveTabId(existing.id);
+      const sessionHost = activeSessions.get(sessionId);
+      const newTab: TabItem = {
+        id: sftpTabId,
+        type: 'sftp',
+        title: `${sessionHost?.name || 'Server'} (SFTP)`,
+        sessionId,
+        hostId: sessionHost?.id,
+        initialPath: targetPath,
+      };
+
+      setActiveTabId(newTab.id);
       setCurrentView('sftp');
-      return;
-    }
-
-    const sessionHost = activeSessions.get(sessionId);
-    const newTab: TabItem = {
-      id: sftpTabId,
-      type: 'sftp',
-      title: `${sessionHost?.name || 'Server'} (SFTP)`,
-      sessionId,
-      hostId: sessionHost?.id,
-    };
-
-    setTabs((prev) => [...prev, newTab]);
-    setActiveTabId(newTab.id);
-    setCurrentView('sftp');
-  };
+      return [...prev, newTab];
+    });
+  }, [activeSessions]);
 
   // Open Monitor tab for existing session
-  const handleOpenMonitor = (sessionId: string) => {
+  const handleOpenMonitor = useCallback((sessionId: string) => {
     const monTabId = `monitor-${sessionId}`;
-    const existing = tabs.find((t) => t.id === monTabId);
+    setTabs((prev) => {
+      const existing = prev.find((t) => t.id === monTabId);
+      if (existing) {
+        setActiveTabId(existing.id);
+        setCurrentView('monitor');
+        return prev;
+      }
 
-    if (existing) {
-      setActiveTabId(existing.id);
+      const sessionHost = activeSessions.get(sessionId);
+      const newTab: TabItem = {
+        id: monTabId,
+        type: 'monitor',
+        title: `${sessionHost?.name || 'Server'} (Stats)`,
+        sessionId,
+        hostId: sessionHost?.id,
+      };
+
+      setActiveTabId(newTab.id);
       setCurrentView('monitor');
-      return;
-    }
-
-    const sessionHost = activeSessions.get(sessionId);
-    const newTab: TabItem = {
-      id: monTabId,
-      type: 'monitor',
-      title: `${sessionHost?.name || 'Server'} (Stats)`,
-      sessionId,
-      hostId: sessionHost?.id,
-    };
-
-    setTabs((prev) => [...prev, newTab]);
-    setActiveTabId(newTab.id);
-    setCurrentView('monitor');
-  };
+      return [...prev, newTab];
+    });
+  }, [activeSessions]);
 
   // Close Tab
-  const handleCloseTab = (tabId: string) => {
+  const handleCloseTab = useCallback((tabId: string) => {
     const tabToClose = tabs.find((t) => t.id === tabId);
     const nextTabs = tabs.filter((t) => t.id !== tabId);
     setTabs(nextTabs);
 
-    if (tabToClose?.sessionId && tabToClose.type === 'terminal') {
+    if (tabToClose?.sessionId) {
       const hasOtherTabsWithSession = nextTabs.some((t) => t.sessionId === tabToClose.sessionId);
       if (!hasOtherTabsWithSession) {
         window.api?.ssh.disconnect(tabToClose.sessionId);
@@ -353,10 +452,10 @@ const MainApp: React.FC = () => {
         setCurrentView('hosts');
       }
     }
-  };
+  }, [tabs, activeTabId]);
 
   // Run Snippet in active terminal
-  const handleRunSnippet = (cmd: string) => {
+  const handleRunSnippet = useCallback((cmd: string) => {
     const activeTab = tabs.find((t) => t.id === activeTabId && t.type === 'terminal');
     const targetSessionId = activeTab?.sessionId || tabs.find((t) => t.type === 'terminal')?.sessionId;
 
@@ -365,10 +464,14 @@ const MainApp: React.FC = () => {
     } else {
       alert('Please connect to an SSH terminal first to execute this command.');
     }
-  };
+  }, [tabs, activeTabId]);
 
   // Host CRUD
   const handleSaveHost = async (host: HostProfile) => {
+    if (!vaultStatus.isUnlocked) {
+      setIsVaultModalOpen(true);
+      return;
+    }
     await window.api.vault.saveHost(host);
     setHosts(await window.api.vault.getHosts());
   };
@@ -381,20 +484,270 @@ const MainApp: React.FC = () => {
   // Vault Lock Toggle
   const handleToggleVault = async () => {
     if (vaultStatus.isUnlocked) {
+      if (vaultStatus.protectionMode === 'system' && !vaultStatus.biometricsEnabled) {
+        // In DPAPI mode without biometrics/master password, locking cannot be guarded against current session.
+        // Direct the user to configure security (Master Password or Biometrics)
+        setIsVaultModalOpen(true);
+        return;
+      }
       await window.api.vault.lock();
       setVaultStatus({ ...vaultStatus, isUnlocked: false });
       setHosts([]);
     } else {
+      if (vaultStatus.protectionMode === 'system') {
+        if (vaultStatus.biometricsAvailable && vaultStatus.biometricsEnabled) {
+          const ok = await window.api.vault.unlockWithBiometrics();
+          if (ok) {
+            await loadVaultData();
+            return;
+          }
+        }
+      }
       setIsVaultModalOpen(true);
     }
   };
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const canDuplicate = Boolean(activeTab?.sessionId && activeSessions.has(activeTab.sessionId));
+  const activeSplitMode: SplitLayoutMode = activeTab?.splitMode || 'single';
+  const activePanes: PaneConfig[] = activeTab?.panes || [
+    { id: 'pane-0', viewType: (activeTab?.type as PaneViewType) || 'terminal', tabId: activeTab?.id },
+    { id: 'pane-1', viewType: 'sftp' },
+    { id: 'pane-2', viewType: 'local' },
+  ];
+
+  const handleSelectTab = useCallback((tabId: string) => {
+    setActiveTabId(tabId);
+    const selectedTab = tabs.find((t) => t.id === tabId);
+    if (selectedTab) {
+      setCurrentView(selectedTab.type);
+      lastActiveTabByType.current[selectedTab.type] = tabId;
+      if (selectedTab.originalType) {
+        lastActiveTabByType.current[selectedTab.originalType] = tabId;
+      }
+    }
+  }, [tabs]);
+
+  // Per-Tab Split Layout Operations
+  const handleSetSplitMode = useCallback((mode: SplitLayoutMode, tabIdTarget?: string) => {
+    const targetTab = (tabIdTarget ? tabs.find((t) => t.id === tabIdTarget) : null) || activeTab;
+    if (!targetTab) return;
+
+    if (mode === 'single') {
+      // Disabling split: collapse right-to-left!
+      // In mono, the leftmost pane (pane 0) becomes the mono tab.
+      const leftPane = targetTab.panes?.[0];
+      const targetType = (leftPane?.viewType as TabType) || targetTab.originalType || targetTab.type;
+      const targetTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === targetTab.id
+            ? {
+                ...t,
+                splitMode: 'single',
+                type: targetType,
+                title: targetTitle,
+                panes: undefined,
+              }
+            : t
+        )
+      );
+      if (activeTabId === targetTab.id) {
+        setCurrentView(targetType);
+        lastActiveTabByType.current[targetType] = targetTab.id;
+      }
+    } else if (mode === 'split-2') {
+      if (targetTab.splitMode === 'split-3') {
+        // Collapsing from 3 to 2 panes: drop the rightmost pane (pane 2)!
+        const currentPanes = targetTab.panes || [];
+        const nextPanes = [currentPanes[0], currentPanes[1]];
+        const baseTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+        const newTitle = `${baseTitle} [${nextPanes[0].viewType.toUpperCase()} + ${nextPanes[1].viewType.toUpperCase()}]`;
+
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === targetTab.id
+              ? {
+                  ...t,
+                  splitMode: 'split-2',
+                  panes: nextPanes,
+                  title: newTitle,
+                }
+              : t
+          )
+        );
+      } else {
+        // Upgrading from single to 2 panes
+        const currentType = (targetTab.originalType || targetTab.type) as PaneViewType;
+        const secondType: PaneViewType = currentType === 'terminal' ? 'sftp' : 'terminal';
+        const baseTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+        const newTitle = `${baseTitle} [${currentType.toUpperCase()} + ${secondType.toUpperCase()}]`;
+
+        const initialPanes: PaneConfig[] = [
+          { id: 'pane-0', viewType: currentType, tabId: targetTab.id },
+          { id: 'pane-1', viewType: secondType },
+        ];
+
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === targetTab.id
+              ? {
+                  ...t,
+                  splitMode: 'split-2',
+                  originalType: t.originalType || t.type,
+                  originalTitle: t.originalTitle || t.title,
+                  panes: initialPanes,
+                  title: newTitle,
+                }
+              : t
+          )
+        );
+      }
+    } else if (mode === 'split-3') {
+      const currentPanes = targetTab.panes || [
+        { id: 'pane-0', viewType: (targetTab.originalType || targetTab.type) as PaneViewType, tabId: targetTab.id },
+        { id: 'pane-1', viewType: 'sftp' as PaneViewType },
+      ];
+
+      const thirdType: PaneViewType = currentPanes.some((p) => p.viewType === 'local') ? 'terminal' : 'local';
+      const nextPanes: PaneConfig[] = [
+        currentPanes[0] || { id: 'pane-0', viewType: (targetTab.originalType || targetTab.type) as PaneViewType, tabId: targetTab.id },
+        currentPanes[1] || { id: 'pane-1', viewType: 'sftp' },
+        { id: 'pane-2', viewType: thirdType },
+      ];
+
+      const baseTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+      const newTitle = `${baseTitle} [${nextPanes[0].viewType.toUpperCase()} + ${nextPanes[1].viewType.toUpperCase()} + ${nextPanes[2].viewType.toUpperCase()}]`;
+
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === targetTab.id
+            ? {
+                ...t,
+                splitMode: 'split-3',
+                originalType: t.originalType || t.type,
+                originalTitle: t.originalTitle || t.title,
+                panes: nextPanes,
+                title: newTitle,
+              }
+            : t
+        )
+      );
+    }
+
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
+  }, [activeTab, activeTabId, tabs]);
+
+  // Close specific pane in split layout
+  const handleRemovePane = useCallback((paneIndex: number, tabIdTarget?: string) => {
+    const targetTab = (tabIdTarget ? tabs.find((t) => t.id === tabIdTarget) : null) || activeTab;
+    if (!targetTab) return;
+    const currentPanes = targetTab.panes || [];
+    if (currentPanes.length <= 1) return;
+
+    if (targetTab.splitMode === 'split-3') {
+      const nextPanes = currentPanes.filter((_, idx) => idx !== paneIndex);
+      const baseTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+      const newTitle = `${baseTitle} [${nextPanes[0].viewType.toUpperCase()} + ${nextPanes[1].viewType.toUpperCase()}]`;
+
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === targetTab.id
+            ? {
+                ...t,
+                splitMode: 'split-2',
+                panes: nextPanes,
+                title: newTitle,
+              }
+            : t
+        )
+      );
+    } else {
+      // 2 panes -> 1 pane: the remaining pane becomes the single tab content
+      const remainingPane = currentPanes[1 - paneIndex] || currentPanes[0];
+      const targetType = (remainingPane.viewType as TabType) || targetTab.originalType || targetTab.type;
+      const targetTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+
+      const linkedTab = remainingPane.tabId ? tabs.find((t) => t.id === remainingPane.tabId) : undefined;
+      const targetSessionId = linkedTab?.sessionId || targetTab.sessionId;
+
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === targetTab.id
+            ? {
+                ...t,
+                splitMode: 'single',
+                type: targetType,
+                title: targetTitle,
+                sessionId: targetSessionId,
+                panes: undefined,
+              }
+            : t
+        )
+      );
+      if (activeTabId === targetTab.id) {
+        setCurrentView(targetType);
+        lastActiveTabByType.current[targetType] = targetTab.id;
+      }
+    }
+
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
+  }, [activeTab, activeTabId, tabs]);
+
+  const handleChangePane = useCallback((paneIndex: number, newConfig: PaneConfig, tabIdTarget?: string) => {
+    const targetId = tabIdTarget || activeTabId;
+    if (!targetId) return;
+    setTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.id !== targetId) return tab;
+        const nextPanes = [...(tab.panes || [])];
+        nextPanes[paneIndex] = newConfig;
+        return { ...tab, panes: nextPanes };
+      })
+    );
+  }, [activeTabId]);
+
+  const handleNavigateToTerminal = useCallback((sessionId: string, folderPath: string, shouldSwitchTab = true) => {
+    const cleanPath = sanitizeRemotePath(folderPath);
+    const cdCmd = formatCdCommand(cleanPath);
+    const termTab = tabs.find((t) => t.sessionId === sessionId && t.type === 'terminal');
+    if (termTab) {
+      if (shouldSwitchTab && (!activeTab || !activeTab.splitMode || activeTab.splitMode === 'single')) {
+        setActiveTabId(termTab.id);
+        setCurrentView('terminal');
+      }
+      window.api?.ssh.write(sessionId, cdCmd.endsWith('\n') ? cdCmd : `${cdCmd}\n`);
+    } else {
+      const host = activeSessions.get(sessionId);
+      if (host) {
+        executeConnection(host, 'terminal');
+        setTimeout(() => {
+          window.api?.ssh.write(sessionId, cdCmd.endsWith('\n') ? cdCmd : `${cdCmd}\n`);
+        }, 600);
+      }
+    }
+  }, [tabs, activeTab, activeSessions]);
+
+  const handleTabModifiedChange = useCallback((tabId: string, isModified: boolean) => {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === tabId ? { ...t, isModified } : t))
+    );
+  }, []);
+
+  const handleNewConnectionModal = useCallback((type: TabType) => {
+    if (type === 'terminal' || type === 'sftp' || type === 'monitor') {
+      setConnectModalType(type);
+    }
+  }, []);
 
   return (
-    <div className={`flex flex-col h-screen w-screen overflow-hidden ${
-      isLight ? 'bg-[#f3f3f3] text-slate-800' : 'bg-[#181818] text-slate-100'
+    <div className={`flex flex-col h-screen w-screen overflow-hidden select-none ${
+      isLight ? 'bg-[#f3f3f3] text-slate-800' : 'bg-[#181818] text-slate-200'
     }`}>
       {/* Titlebar with tabs and Windows 11 controls */}
       <TitleBar
@@ -403,11 +756,10 @@ const MainApp: React.FC = () => {
         isLight={isLight}
         canDuplicate={canDuplicate}
         updateAvailable={updateState.status === 'available' || updateState.status === 'downloaded'}
-        onSelectTab={(id) => {
-          setActiveTabId(id);
-          const t = tabs.find((item) => item.id === id);
-          if (t) setCurrentView(t.type);
-        }}
+        splitMode={activeSplitMode}
+        onSetSplitMode={handleSetSplitMode}
+        onToggleTheme={handleToggleTheme}
+        onSelectTab={handleSelectTab}
         onCloseTab={handleCloseTab}
         onNewTab={() => {
           setCurrentView('hosts');
@@ -425,210 +777,225 @@ const MainApp: React.FC = () => {
         <Sidebar
           currentView={currentView}
           isLight={isLight}
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onSelectTab={handleSelectTab}
+          onCloseTab={handleCloseTab}
+          onNewConnection={(type) => {
+            if (type === 'terminal' || type === 'sftp' || type === 'monitor') {
+              setConnectModalType(type);
+            }
+          }}
           onSelectView={(view) => {
             setCurrentView(view);
-            if (view !== 'hosts') {
-              const matchingTab = tabs.find((t) => t.type === view);
-              if (matchingTab) setActiveTabId(matchingTab.id);
-            } else {
+            if (view === 'hosts') {
               setActiveTabId('hosts-view');
+              return;
+            }
+            if (view === 'settings') {
+              setActiveTabId('settings-view');
+              return;
+            }
+            if (view === 'local') {
+              setActiveTabId('local-view');
+              return;
+            }
+            if (view === 'tunnels') {
+              setActiveTabId('tunnels-view');
+              return;
+            }
+
+            // Find all tabs matching this view type (including split tabs containing this view)
+            const matchingTabs = tabs.filter(
+              (t) => t.type === view || t.originalType === view || t.panes?.some((p) => p.viewType === view)
+            );
+            if (matchingTabs.length === 0) {
+              setActiveTabId(`${view}-view`);
+              return;
+            }
+
+            // If the current active tab is already one of the matching tabs, cycle to the NEXT matching tab!
+            const currentIndex = matchingTabs.findIndex((t) => t.id === activeTabId);
+            if (currentIndex !== -1 && matchingTabs.length > 1) {
+              const nextIndex = (currentIndex + 1) % matchingTabs.length;
+              const nextTab = matchingTabs[nextIndex];
+              setActiveTabId(nextTab.id);
+              lastActiveTabByType.current[view] = nextTab.id;
+            } else {
+              // Otherwise, activate the last used or first tab of this type
+              const lastId = lastActiveTabByType.current[view];
+              const targetTab = matchingTabs.find((t) => t.id === lastId) || matchingTabs[0];
+              setActiveTabId(targetTab.id);
+              lastActiveTabByType.current[view] = targetTab.id;
             }
           }}
           vaultStatus={vaultStatus}
           onToggleVault={handleToggleVault}
-          onOpenAbout={() => handleOpenAbout('mission')}
-          connectedSessionCount={activeSessions.size}
+          onOpenAbout={(tab) => handleOpenAbout(tab || 'mission')}
+          connectedSessionCount={tabs.filter((t) => t.type === 'terminal').length}
         />
 
         {/* Dynamic Center Stage */}
         <div className="flex-1 flex overflow-hidden relative">
-          {/* Hosts Management View */}
-          {currentView === 'hosts' && (
+          {/* Hosts Management View (Kept alive for instant zero-jank switching) */}
+          <div
+            className="w-full h-full"
+            style={{ display: currentView === 'hosts' ? 'flex' : 'none' }}
+          >
             <HostList
               hosts={hosts}
               isLight={isLight}
+              isVaultLocked={!vaultStatus.isUnlocked}
+              onUnlockVault={() => setIsVaultModalOpen(true)}
               onConnect={handleConnect}
               onEdit={(h) => {
+                if (!vaultStatus.isUnlocked) {
+                  setIsVaultModalOpen(true);
+                  return;
+                }
                 setEditingHost(h);
                 setIsHostModalOpen(true);
               }}
               onDelete={handleDeleteHost}
               onNewHost={() => {
+                if (!vaultStatus.isUnlocked) {
+                  setIsVaultModalOpen(true);
+                  return;
+                }
                 setEditingHost(null);
                 setIsHostModalOpen(true);
               }}
+              connectingInfo={connectingHostInfo}
             />
-          )}
+          </div>
 
-          {/* Terminal Views Container (Kept alive across tab & view switches) */}
-          {tabs
-            .filter((t) => t.type === 'terminal' && t.sessionId)
-            .map((tab) => {
-              const activeTerminalTabId =
-                tabs.find((item) => item.id === activeTabId && item.type === 'terminal')?.id ||
-                tabs.find((item) => item.type === 'terminal')?.id;
-              const isTabActive = currentView === 'terminal' && activeTerminalTabId === tab.id;
+          {/* Views Area wrapped in Suspense for Lazy Loading */}
+          <Suspense fallback={
+            <div className="flex-1 flex items-center justify-center">
+              <div className="w-6 h-6 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+            </div>
+          }>
+            {/* Persistent Tab Views (Kept alive across all tab & view switches) */}
+            {tabs.map((tab) => {
+              const isSplit = Boolean(tab.splitMode && tab.splitMode !== 'single');
+              const isTabActive = Boolean(
+                activeTabId === tab.id &&
+                currentView !== 'hosts' &&
+                currentView !== 'settings' &&
+                currentView !== 'tunnels' &&
+                (currentView === tab.type ||
+                  isSplit ||
+                  tab.originalType === currentView ||
+                  tab.panes?.some((p) => p.viewType === currentView))
+              );
+
               return (
-                <div
+                <TabWorkspace
                   key={tab.id}
-                  className="w-full h-full"
-                  style={{ display: isTabActive ? 'flex' : 'none' }}
-                >
-                  <TerminalView
-                    sessionId={tab.sessionId!}
-                    host={activeSessions.get(tab.sessionId!)}
-                    isLight={isLight}
-                    isActive={isTabActive}
-                    onOpenSftp={() => handleOpenSftp(tab.sessionId!)}
-                    onOpenMonitor={() => handleOpenMonitor(tab.sessionId!)}
-                    onOpenFileInEditor={(filePath, fileName) =>
-                      handleOpenFileInEditor(tab.sessionId!, filePath, fileName)
-                    }
-                    onDuplicateSession={() => handleDuplicateSession(tab.sessionId)}
-                  />
-                </div>
+                  tab={tab}
+                  isTabActive={isTabActive}
+                  tabs={tabs}
+                  activeSessions={activeSessions}
+                  hosts={hosts}
+                  isLight={isLight}
+                  settings={settings}
+                  snippets={snippets}
+                  onRunSnippet={handleRunSnippet}
+                  onOpenSftp={handleOpenSftp}
+                  onOpenMonitor={handleOpenMonitor}
+                  onOpenFileInEditor={handleOpenFileInEditor}
+                  onDuplicateSession={handleDuplicateSession}
+                  onNavigateToTerminal={handleNavigateToTerminal}
+                  onCloseTab={handleCloseTab}
+                  onNewConnection={handleNewConnectionModal}
+                  onReconnectSession={handleReconnectSession}
+                  onChangePane={handleChangePane}
+                  onSetSplitMode={handleSetSplitMode}
+                  onRemovePane={handleRemovePane}
+                  onTabModifiedChange={handleTabModifiedChange}
+                />
               );
             })}
 
-          {/* Terminal Empty State when no terminal tabs exist */}
-          {currentView === 'terminal' && !tabs.some((t) => t.type === 'terminal' && t.sessionId) && (
-            <EmptyStateView
-              viewType="terminal"
-              hosts={hosts}
-              isLight={isLight}
-              onConnectHost={(h) => handleConnect(h, 'terminal')}
-              onQuickConnect={(cmd) => handleQuickConnect(cmd, 'terminal')}
-              onNewHost={() => {
-                setEditingHost(null);
-                setIsHostModalOpen(true);
-              }}
-            />
-          )}
+            {/* Dedicated Local Files View (Kept alive across all tab & view switches) */}
+            <div
+              className="w-full h-full"
+              style={{ display: currentView === 'local' ? 'flex' : 'none' }}
+            >
+              <LocalFilesView
+                isLight={isLight}
+                folderClickMode={settings.folderClickMode || 'double'}
+                onOpenFileInEditor={(filePath, fileName) => {
+                  const firstSessionId = Array.from(activeSessions.keys())[0];
+                  if (firstSessionId) {
+                    handleOpenFileInEditor(firstSessionId, filePath, fileName);
+                  }
+                }}
+              />
+            </div>
 
-          {/* Active SFTP Tab Views (Kept alive across tab & view switches) */}
-          {tabs
-            .filter((t) => t.type === 'sftp' && t.sessionId)
-            .map((tab) => {
-              const activeSftpTabId =
-                tabs.find((item) => item.id === activeTabId && item.type === 'sftp')?.id ||
-                tabs.find((item) => item.type === 'sftp')?.id;
-              const isTabActive = currentView === 'sftp' && activeSftpTabId === tab.id;
-              return (
-                <div
-                  key={tab.id}
-                  className="w-full h-full"
-                  style={{ display: isTabActive ? 'flex' : 'none' }}
-                >
-                  <SftpView
-                    sessionId={tab.sessionId!}
-                    isLight={isLight}
-                    initialPath={activeSessions.get(tab.sessionId!)?.defaultPath || '/'}
-                    onOpenFileInEditor={(filePath, fileName) =>
-                      handleOpenFileInEditor(tab.sessionId!, filePath, fileName)
-                    }
-                    onNavigateToTerminal={(folderPath) => {
-                      const termTab = tabs.find(t => t.sessionId === tab.sessionId && t.type === 'terminal');
-                      if (termTab) {
-                        setActiveTabId(termTab.id);
-                        setCurrentView('terminal');
-                        window.api?.ssh.write(tab.sessionId!, `cd "${folderPath}"\n`);
-                      } else {
-                        const host = activeSessions.get(tab.sessionId!);
-                        if (host) {
-                          executeConnection(host, 'terminal');
-                          setTimeout(() => {
-                            window.api?.ssh.write(tab.sessionId!, `cd "${folderPath}"\n`);
-                          }, 600);
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              );
-            })}
+            {/* Terminal Empty State when no terminal tabs exist */}
+            {currentView === 'terminal' && !tabs.some((t) => t.type === 'terminal' && t.sessionId) && (
+              <EmptyStateView
+                viewType="terminal"
+                hosts={hosts}
+                isLight={isLight}
+                onConnectHost={(h) => handleConnect(h, 'terminal')}
+                onQuickConnect={(cmd) => handleQuickConnect(cmd, 'terminal')}
+                onNewHost={() => {
+                  setEditingHost(null);
+                  setIsHostModalOpen(true);
+                }}
+              />
+            )}
 
-          {/* SFTP Empty State when no SFTP tabs exist */}
-          {currentView === 'sftp' && !tabs.some((t) => t.type === 'sftp' && t.sessionId) && (
-            <EmptyStateView
-              viewType="sftp"
-              hosts={hosts}
-              isLight={isLight}
-              onConnectHost={(h) => handleConnect(h, 'sftp')}
-              onQuickConnect={(cmd) => handleQuickConnect(cmd, 'sftp')}
-              onNewHost={() => {
-                setEditingHost(null);
-                setIsHostModalOpen(true);
-              }}
-            />
-          )}
+            {/* SFTP Empty State when no SFTP tabs exist */}
+            {currentView === 'sftp' && !tabs.some((t) => t.type === 'sftp' && t.sessionId) && (
+              <EmptyStateView
+                viewType="sftp"
+                hosts={hosts}
+                isLight={isLight}
+                onConnectHost={(h) => handleConnect(h, 'sftp')}
+                onQuickConnect={(cmd) => handleQuickConnect(cmd, 'sftp')}
+                onNewHost={() => {
+                  setEditingHost(null);
+                  setIsHostModalOpen(true);
+                }}
+              />
+            )}
 
-          {/* Active Monaco Editor Tab Views (Kept alive across tab & view switches) */}
-          {tabs
-            .filter((t) => t.type === 'editor' && t.sessionId && t.filePath)
-            .map((tab) => {
-              const activeEditorTabId =
-                tabs.find((item) => item.id === activeTabId && item.type === 'editor')?.id ||
-                tabs.find((item) => item.type === 'editor')?.id;
-              const isTabActive = currentView === 'editor' && activeEditorTabId === tab.id;
-              return (
-                <div
-                  key={tab.id}
-                  className="w-full h-full"
-                  style={{ display: isTabActive ? 'flex' : 'none' }}
-                >
-                  <MonacoEditorView
-                    sessionId={tab.sessionId!}
-                    filePath={tab.filePath!}
-                    fileName={tab.title}
-                    isLight={isLight}
-                    onClose={() => handleCloseTab(tab.id)}
-                    onModifiedChange={(isMod) => {
-                      setTabs((prev) =>
-                        prev.map((t) => (t.id === tab.id ? { ...t, isModified: isMod } : t))
-                      );
-                    }}
-                  />
-                </div>
-              );
-            })}
+            {/* Monitor Empty State when no monitor tabs exist */}
+            {currentView === 'monitor' && !tabs.some((t) => t.type === 'monitor' && t.sessionId) && (
+              <EmptyStateView
+                viewType="monitor"
+                hosts={hosts}
+                isLight={isLight}
+                onConnectHost={(h) => handleConnect(h, 'monitor')}
+                onQuickConnect={(cmd) => handleQuickConnect(cmd, 'monitor')}
+                onNewHost={() => {
+                  setEditingHost(null);
+                  setIsHostModalOpen(true);
+                }}
+              />
+            )}
 
-          {/* Active Monitor Tab Views (Kept alive across tab & view switches) */}
-          {tabs
-            .filter((t) => t.type === 'monitor' && t.sessionId)
-            .map((tab) => {
-              const activeMonitorTabId =
-                tabs.find((item) => item.id === activeTabId && item.type === 'monitor')?.id ||
-                tabs.find((item) => item.type === 'monitor')?.id;
-              const isTabActive = currentView === 'monitor' && activeMonitorTabId === tab.id;
-              return (
-                <div
-                  key={tab.id}
-                  className="w-full h-full"
-                  style={{ display: isTabActive ? 'flex' : 'none' }}
-                >
-                  <MonitorView
-                    sessionId={tab.sessionId!}
-                    isLight={isLight}
-                    hostName={activeSessions.get(tab.sessionId!)?.name}
-                  />
-                </div>
-              );
-            })}
-
-          {/* Monitor Empty State when no monitor tabs exist */}
-          {currentView === 'monitor' && !tabs.some((t) => t.type === 'monitor' && t.sessionId) && (
-            <EmptyStateView
-              viewType="monitor"
-              hosts={hosts}
-              isLight={isLight}
-              onConnectHost={(h) => handleConnect(h, 'monitor')}
-              onQuickConnect={(cmd) => handleQuickConnect(cmd, 'monitor')}
-              onNewHost={() => {
-                setEditingHost(null);
-                setIsHostModalOpen(true);
-              }}
-            />
-          )}
+            {/* Snippets View */}
+            {currentView === 'editor' && !activeTab?.filePath && (
+              <SnippetsView
+                snippets={snippets}
+                isLight={isLight}
+                onRunSnippet={handleRunSnippet}
+                onSaveSnippet={async (snippet) => {
+                  await window.api.vault.saveSnippet(snippet);
+                  setSnippets(await window.api.vault.getSnippets());
+                }}
+                onDeleteSnippet={async (id) => {
+                  await window.api.vault.deleteSnippet(id);
+                  setSnippets(await window.api.vault.getSnippets());
+                }}
+                hasActiveSession={activeSessions.size > 0}
+              />
+            )}
 
           {/* Tunnels View */}
           {currentView === 'tunnels' && (
@@ -647,24 +1014,6 @@ const MainApp: React.FC = () => {
             />
           )}
 
-          {/* Snippets View */}
-          {currentView === 'editor' && !activeTab?.filePath && (
-            <SnippetsView
-              snippets={snippets}
-              isLight={isLight}
-              onRunSnippet={handleRunSnippet}
-              onSaveSnippet={async (snippet) => {
-                await window.api.vault.saveSnippet(snippet);
-                setSnippets(await window.api.vault.getSnippets());
-              }}
-              onDeleteSnippet={async (id) => {
-                await window.api.vault.deleteSnippet(id);
-                setSnippets(await window.api.vault.getSnippets());
-              }}
-              hasActiveSession={activeSessions.size > 0}
-            />
-          )}
-
           {/* Settings View */}
           {currentView === 'settings' && (
             <SettingsView
@@ -680,6 +1029,7 @@ const MainApp: React.FC = () => {
               onOpenAbout={(tab) => handleOpenAbout(tab)}
             />
           )}
+          </Suspense>
         </div>
       </div>
 
@@ -760,7 +1110,7 @@ const MainApp: React.FC = () => {
             className="flex items-center space-x-1.5 cursor-pointer hover:opacity-80 transition-opacity"
             title={t('about.title')}
           >
-            <img src="/logo.png" alt="BesTTY" className="w-3.5 h-3.5 rounded object-contain" />
+            <img src={appLogo} alt="BesTTY" className="w-3.5 h-3.5 rounded object-contain" />
             <span className="font-semibold text-sky-400">
               BesTTY v{updateState.currentVersion || '1.0.0'}
             </span>
@@ -768,48 +1118,76 @@ const MainApp: React.FC = () => {
         </div>
       </div>
 
-      {/* Modals */}
-      <HostModal
-        isOpen={isHostModalOpen}
-        isLight={isLight}
-        onClose={() => setIsHostModalOpen(false)}
-        onSave={handleSaveHost}
-        onOpenHelp={() => setIsHelpModalOpen(true)}
-        hostToEdit={editingHost}
-        availableHosts={hosts}
-      />
+      {/* Modals rendered on-demand */}
+      <Suspense fallback={null}>
+        {isHostModalOpen && (
+          <HostModal
+            isOpen={isHostModalOpen}
+            isLight={isLight}
+            onClose={() => setIsHostModalOpen(false)}
+            onSave={handleSaveHost}
+            onOpenHelp={() => setIsHelpModalOpen(true)}
+            hostToEdit={editingHost}
+            availableHosts={hosts}
+          />
+        )}
 
-      <VaultModal
-        isOpen={isVaultModalOpen}
-        isLight={isLight}
-        onClose={() => setIsVaultModalOpen(false)}
-        vaultStatus={vaultStatus}
-        onUnlockSuccess={loadVaultData}
-      />
+        {isVaultModalOpen && (
+          <VaultModal
+            isOpen={isVaultModalOpen}
+            isLight={isLight}
+            onClose={() => setIsVaultModalOpen(false)}
+            vaultStatus={vaultStatus}
+            onUnlockSuccess={loadVaultData}
+          />
+        )}
 
-      <PasswordPromptModal
-        isOpen={isPasswordPromptOpen}
-        isLight={isLight}
-        host={pendingPromptHost}
-        onClose={() => {
-          setIsPasswordPromptOpen(false);
-          setPendingPromptHost(null);
-        }}
-        onSubmit={handlePasswordPromptSubmit}
-      />
+        {isPasswordPromptOpen && (
+          <PasswordPromptModal
+            isOpen={isPasswordPromptOpen}
+            isLight={isLight}
+            host={pendingPromptHost}
+            onClose={() => {
+              setIsPasswordPromptOpen(false);
+              setPendingPromptHost(null);
+            }}
+            onSubmit={handlePasswordPromptSubmit}
+          />
+        )}
 
-      <HelpModal
-        isOpen={isHelpModalOpen}
-        isLight={isLight}
-        onClose={() => setIsHelpModalOpen(false)}
-      />
+        {isHelpModalOpen && (
+          <HelpModal
+            isOpen={isHelpModalOpen}
+            isLight={isLight}
+            onClose={() => setIsHelpModalOpen(false)}
+          />
+        )}
 
-      <AboutModal
-        isOpen={isAboutModalOpen}
-        isLight={isLight}
-        initialTab={aboutModalTab}
-        onClose={() => setIsAboutModalOpen(false)}
-      />
+        {isAboutModalOpen && (
+          <AboutModal
+            isOpen={isAboutModalOpen}
+            isLight={isLight}
+            initialTab={aboutModalTab}
+            onClose={() => setIsAboutModalOpen(false)}
+          />
+        )}
+
+        {connectModalType && (
+          <ConnectHostModal
+            isOpen={!!connectModalType}
+            viewType={connectModalType}
+            hosts={hosts}
+            isLight={isLight}
+            onClose={() => setConnectModalType(null)}
+            onConnectHost={(h, targetType) => handleConnect(h, targetType)}
+            onQuickConnect={(cmd, targetType) => handleQuickConnect(cmd, targetType)}
+            onNewHost={() => {
+              setEditingHost(null);
+              setIsHostModalOpen(true);
+            }}
+          />
+        )}
+      </Suspense>
     </div>
   );
 };

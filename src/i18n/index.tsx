@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { en, TranslationDictionary } from './locales/en';
 import { ru } from './locales/ru';
+import { hy } from './locales/hy';
 
-export type SupportedLocale = 'en' | 'ru';
+export type SupportedLocale = 'en' | 'ru' | 'hy';
 
 interface I18nContextType {
   locale: SupportedLocale;
@@ -13,6 +14,7 @@ interface I18nContextType {
 const dictionaries: Record<SupportedLocale, TranslationDictionary> = {
   en,
   ru,
+  hy,
 };
 
 const I18nContext = createContext<I18nContextType>({
@@ -25,16 +27,21 @@ export const I18nProvider: React.FC<{ initialLocale?: SupportedLocale; children:
   initialLocale = 'ru',
   children,
 }) => {
-  const [locale, setLocaleState] = useState<SupportedLocale>(initialLocale);
-
-  useEffect(() => {
-    if (initialLocale) {
-      setLocaleState(initialLocale);
-    }
-  }, [initialLocale]);
+  const [locale, setLocaleState] = useState<SupportedLocale>(() => {
+    try {
+      const saved = localStorage.getItem('bestty_locale');
+      if (saved && (saved === 'ru' || saved === 'en' || saved === 'hy')) {
+        return saved as SupportedLocale;
+      }
+    } catch {}
+    return initialLocale;
+  });
 
   const setLocale = (newLocale: SupportedLocale) => {
     setLocaleState(newLocale);
+    try {
+      localStorage.setItem('bestty_locale', newLocale);
+    } catch {}
   };
 
   const t = (path: string, variables?: Record<string, string | number>): string => {

@@ -1,27 +1,41 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
-import { HostProfile, SFTPFile, ServerMetrics, RemoteProcess } from '../types';
-import { useTranslation } from '../i18n';
 import { 
-  FolderTree, Activity, Search, X, Trash2, 
-  Folder, FileText, FileCode, FileArchive, CornerLeftUp, 
-  RotateCw, ChevronRight, ChevronLeft, Edit, Zap, PanelLeft, PanelRight, 
-  Terminal as TerminalIcon, Clipboard, ArrowLeftRight, HardDrive, Cpu, Layers
+  HostProfile, SFTPFile, Snippet, DirectorySyncConfig, 
+  STORAGE_KEY_DIR_SYNC, FolderClickMode, EVENT_DIR_SYNC_CHANGED, EVENT_SFTP_REFRESHED 
+} from '../types';
+import { useTranslation } from '../i18n';
+import { sanitizeRemotePath, formatCdCommand } from '../utils/pathUtils';
+import { 
+  FolderTree, Activity, Search, X, Broom, RefreshCw,
+  RotateCw, ArrowLeftRight, Code, ChevronDown, Play, AlertCircle
 } from 'lucide-react';
+
+import { TerminalAutocomplete, SuggestionItem, computeSuggestions } from './terminal/TerminalAutocomplete';
+import { TerminalDropOverlay } from './terminal/TerminalDropOverlay';
+import { TerminalMiniMonitor } from './terminal/TerminalMiniMonitor';
+import { TerminalBreadcrumbs } from './terminal/TerminalBreadcrumbs';
+import { TerminalSftpSidebar } from './terminal/TerminalSftpSidebar';
+
+export type { SuggestionItem };
 
 interface TerminalViewProps {
   sessionId: string;
   host?: HostProfile;
   isLight?: boolean;
   isActive?: boolean;
-  onOpenSftp: () => void;
+  snippets?: Snippet[];
+  folderClickMode?: FolderClickMode;
+  onRunSnippet?: (cmd: string) => void;
+  onOpenSftp: (targetPath?: string) => void;
   onOpenMonitor: () => void;
   onOpenFileInEditor: (filePath: string, fileName: string) => void;
   onDuplicateSession: () => void;
+  onReconnectSession?: (sessionId: string, host: HostProfile) => Promise<void>;
 }
 
 interface TerminalLayoutConfig {
@@ -41,9 +55,9 @@ const getInitialLayoutConfig = (): TerminalLayoutConfig => {
     if (raw) {
       const parsed = JSON.parse(raw);
       const sftpWidth =
-        typeof parsed.sftpWidth === 'number' && parsed.sftpWidth >= 180 ? parsed.sftpWidth : 288;
+        typeof parsed.sftpWidth === 'number' && parsed.sftpWidth >= 210 ? parsed.sftpWidth : 288;
       const monitorWidth =
-        typeof parsed.monitorWidth === 'number' && parsed.monitorWidth >= 180 ? parsed.monitorWidth : 288;
+        typeof parsed.monitorWidth === 'number' && parsed.monitorWidth >= 210 ? parsed.monitorWidth : 288;
       const showSftp = typeof parsed.showSftp === 'boolean' ? parsed.showSftp : true;
       const showMonitor = typeof parsed.showMonitor === 'boolean' ? parsed.showMonitor : false;
       const sftpPos: 'left' | 'right' = parsed.sftpPos === 'left' ? 'left' : 'right';
@@ -64,15 +78,17 @@ const getInitialLayoutConfig = (): TerminalLayoutConfig => {
   };
 };
 
-export const TerminalView: React.FC<TerminalViewProps> = ({
+export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
   sessionId,
   host,
   isLight = false,
   isActive = true,
+  snippets = [],
+  folderClickMode = 'double',
   onOpenSftp,
   onOpenMonitor,
   onOpenFileInEditor,
-  onDuplicateSession,
+  onReconnectSession,
 }) => {
   const { t } = useTranslation();
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -80,229 +96,136 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
 
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  // Preserve host reference in case activeSessions deletes it upon connection loss
+  const hostRef = useRef<HostProfile | undefined>(host);
+  useEffect(() => {
+    if (host) {
+      hostRef.current = host;
+    }
+  }, [host]);
+
   const [isConnected, setIsConnected] = useState(true);
+  const isConnectedRef = useRef(isConnected);
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
-  // Right-click context menu state
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [currentDirectory, setCurrentDirectory] = useState<string>(() => host?.defaultPath || hostRef.current?.defaultPath || '~');
+  const currentDirectoryRef = useRef(currentDirectory);
+  useEffect(() => {
+    currentDirectoryRef.current = currentDirectory;
+  }, [currentDirectory]);
 
-  // Load initial layout config from localStorage
+  // Persistent Layout State
   const initialLayout = useRef(getInitialLayoutConfig()).current;
-
-  // Sidebars Widths & State (Opposite side enforcement & persistence)
-  const [sftpSidebarWidth, setSftpSidebarWidth] = useState<number>(initialLayout.sftpWidth);
-  const [monitorSidebarWidth, setMonitorSidebarWidth] = useState<number>(initialLayout.monitorWidth);
-  const [showSftpSidebar, setShowSftpSidebar] = useState<boolean>(initialLayout.showSftp);
+  const [showSftpSidebar, setShowSftpSidebar] = useState(initialLayout.showSftp);
+  const [showMonitorSidebar, setShowMonitorSidebar] = useState(initialLayout.showMonitor);
+  const [sftpSidebarWidth, setSftpSidebarWidth] = useState(initialLayout.sftpWidth);
+  const [monitorSidebarWidth, setMonitorSidebarWidth] = useState(initialLayout.monitorWidth);
   const [sftpPosition, setSftpPosition] = useState<'left' | 'right'>(initialLayout.sftpPos);
-  const [showMonitorSidebar, setShowMonitorSidebar] = useState<boolean>(initialLayout.showMonitor);
   const [monitorPosition, setMonitorPosition] = useState<'left' | 'right'>(initialLayout.monitorPos);
 
-  // Drag-resizing State
+  // Splitter Resizing (disable CSS transitions and pointer events while dragging to prevent stutter)
   const [isResizing, setIsResizing] = useState(false);
-  const resizingRef = useRef<{
+  const resizeStateRef = useRef<{
     panel: 'sftp' | 'monitor';
     dock: 'left' | 'right';
     startX: number;
     startWidth: number;
   } | null>(null);
 
-  // Persist sidebar layout configuration across sessions
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY_LAYOUT,
-        JSON.stringify({
-          sftpWidth: sftpSidebarWidth,
-          monitorWidth: monitorSidebarWidth,
-          showSftp: showSftpSidebar,
-          showMonitor: showMonitorSidebar,
-          sftpPos: sftpPosition,
-          monitorPos: monitorPosition,
-        })
-      );
-    } catch (e) {}
-  }, [sftpSidebarWidth, monitorSidebarWidth, showSftpSidebar, showMonitorSidebar, sftpPosition, monitorPosition]);
+  // Search Bar
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // Clean up cursor and selection if unmounted while dragging
+  // Snippets Quick Bar
+  const [showSnippetDropdown, setShowSnippetDropdown] = useState(false);
+  const snippetDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Autocomplete state
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('bestty_terminal_autocomplete') !== 'false';
+  });
+  const autocompleteEnabledRef = useRef(autocompleteEnabled);
   useEffect(() => {
-    return () => {
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+    autocompleteEnabledRef.current = autocompleteEnabled;
+  }, [autocompleteEnabled]);
+
+  const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
+  const suggestionsRef = useRef(suggestions);
+  useEffect(() => {
+    suggestionsRef.current = suggestions;
+  }, [suggestions]);
+
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const selectedSuggestionIndexRef = useRef(selectedSuggestionIndex);
+  useEffect(() => {
+    selectedSuggestionIndexRef.current = selectedSuggestionIndex;
+  }, [selectedSuggestionIndex]);
+
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const showAutocompleteRef = useRef(showAutocomplete);
+  useEffect(() => {
+    showAutocompleteRef.current = showAutocomplete;
+  }, [showAutocomplete]);
+
+  const typedBufferRef = useRef('');
+  const commandHistoryRef = useRef<string[]>([]);
+  const cachedDirectoryFilesRef = useRef<SFTPFile[]>([]);
+
+  // Drag and drop overlay
+  const [isDragOverTerminal, setIsDragOverTerminal] = useState(false);
+
+  // Context Menu
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  // Path copied indicator
+  const [isPathCopied, setIsPathCopied] = useState(false);
+
+  // Directory Sync Configuration
+  const [syncConfig, setSyncConfig] = useState<DirectorySyncConfig>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_DIR_SYNC);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { terminalToBrowser: true, browserToTerminal: false };
+  });
+
+  const updateSyncConfig = (next: DirectorySyncConfig) => {
+    setSyncConfig(next);
+    try {
+      localStorage.setItem(STORAGE_KEY_DIR_SYNC, JSON.stringify(next));
+      window.dispatchEvent(new CustomEvent(EVENT_DIR_SYNC_CHANGED, { detail: next }));
+    } catch {}
+  };
+
+  useEffect(() => {
+    const handleSyncChange = (e: any) => {
+      if (e.detail) {
+        setSyncConfig(e.detail);
+      }
     };
+    window.addEventListener(EVENT_DIR_SYNC_CHANGED, handleSyncChange);
+    return () => window.removeEventListener(EVENT_DIR_SYNC_CHANGED, handleSyncChange);
   }, []);
 
-  // Mini-Monitor Metrics State
-  const [metrics, setMetrics] = useState<ServerMetrics | null>(null);
-  const [processes, setProcesses] = useState<RemoteProcess[]>([]);
-
-  // SFTP Files State
-  const [sftpPath, setSftpPath] = useState(host?.defaultPath || '/');
-  const [sftpFiles, setSftpFiles] = useState<SFTPFile[]>([]);
-  const [isSftpLoading, setIsSftpLoading] = useState(false);
-  const [sftpFilter, setSftpFilter] = useState('');
-
-  // Paste command from clipboard into terminal
-  const handlePasteFromClipboard = async () => {
-    try {
-      let text = '';
-      if (window.api?.clipboard) {
-        text = await window.api.clipboard.readText();
-      } else {
-        text = await navigator.clipboard.readText();
-      }
-      if (text) {
-        if (xtermInstance.current) {
-          xtermInstance.current.paste(text);
-          xtermInstance.current.focus();
-        } else {
-          window.api?.ssh.write(sessionId, text);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to paste clipboard text:', err);
-    }
-  };
-
-  // Enforce opposite sides when both sidebars are active
-  const toggleSftpPosition = () => {
-    const nextSftpPos = sftpPosition === 'left' ? 'right' : 'left';
-    setSftpPosition(nextSftpPos);
-    if (showMonitorSidebar) {
-      setMonitorPosition(nextSftpPos === 'right' ? 'left' : 'right');
-    }
-    setTimeout(() => fitAddonRef.current?.fit(), 50);
-  };
-
-  const toggleMonitorPosition = () => {
-    const nextMonPos = monitorPosition === 'left' ? 'right' : 'left';
-    setMonitorPosition(nextMonPos);
-    if (showSftpSidebar) {
-      setSftpPosition(nextMonPos === 'right' ? 'left' : 'right');
-    }
-    setTimeout(() => fitAddonRef.current?.fit(), 50);
-  };
-
-  const handleSwapPanels = () => {
-    const newSftpPos = sftpPosition === 'right' ? 'left' : 'right';
-    const newMonPos = monitorPosition === 'right' ? 'left' : 'right';
-    setSftpPosition(newSftpPos);
-    setMonitorPosition(newMonPos);
-    setTimeout(() => fitAddonRef.current?.fit(), 50);
-  };
-
-  // Toggle SFTP Sidebar with collision prevention
-  const handleToggleSftpSidebar = () => {
-    const nextState = !showSftpSidebar;
-    setShowSftpSidebar(nextState);
-    if (nextState && showMonitorSidebar) {
-      setSftpPosition(monitorPosition === 'right' ? 'left' : 'right');
-    }
-    setTimeout(() => fitAddonRef.current?.fit(), 50);
-  };
-
-  // Toggle Mini-Monitor Sidebar with collision prevention
-  const handleToggleMonitorSidebar = () => {
-    const nextState = !showMonitorSidebar;
-    setShowMonitorSidebar(nextState);
-    if (nextState && showSftpSidebar) {
-      setMonitorPosition(sftpPosition === 'right' ? 'left' : 'right');
-    }
-    setTimeout(() => fitAddonRef.current?.fit(), 50);
-  };
-
-  // Start Resizing Sidebar
-  const handleStartResize = (
-    e: React.MouseEvent,
-    panel: 'sftp' | 'monitor',
-    dock: 'left' | 'right'
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const startX = e.clientX;
-    const startWidth = panel === 'sftp' ? sftpSidebarWidth : monitorSidebarWidth;
-
-    resizingRef.current = { panel, dock, startX, startWidth };
-    setIsResizing(true);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-
-    const onMouseMove = (moveEvt: MouseEvent) => {
-      moveEvt.preventDefault();
-      if (!resizingRef.current) return;
-      const { panel: p, dock: d, startX: sX, startWidth: sW } = resizingRef.current;
-      const delta = d === 'left' ? moveEvt.clientX - sX : sX - moveEvt.clientX;
-      const maxWidth = Math.min(800, Math.floor(window.innerWidth * 0.55));
-      const nextWidth = Math.min(Math.max(180, sW + delta), maxWidth);
-
-      if (p === 'sftp') {
-        setSftpSidebarWidth(nextWidth);
-      } else {
-        setMonitorSidebarWidth(nextWidth);
-      }
-      try {
-        fitAddonRef.current?.fit();
-      } catch (err) {}
-    };
-
-    const onMouseUp = () => {
-      resizingRef.current = null;
-      setIsResizing(false);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      setTimeout(() => fitAddonRef.current?.fit(), 30);
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  };
-
-  // Load directory in SFTP sidebar
-  const loadSidebarDirectory = async (pathToGo: string) => {
-    setIsSftpLoading(true);
-    try {
-      const res = await window.api?.sftp.list(sessionId, pathToGo);
-      if (res) {
-        setSftpPath(res.currentPath);
-        setSftpFiles(res.files);
-      }
-    } catch (e) {
-      // Ignore
-    } finally {
-      setIsSftpLoading(false);
-    }
-  };
-
+  // Save layout config
   useEffect(() => {
-    if (showSftpSidebar) {
-      loadSidebarDirectory(sftpPath);
-    }
-  }, [showSftpSidebar, sessionId]);
-
-  // Mini-Monitor Telemetry Lifecycle
-  useEffect(() => {
-    if (!showMonitorSidebar) return;
-
-    window.api?.monitor.start(sessionId);
-
-    const unsubscribe = window.api?.monitor.onStats((payload) => {
-      if (payload.sessionId === sessionId) {
-        setMetrics(payload.metrics);
-        setProcesses(payload.processes);
-      }
-    });
-
-    return () => {
-      unsubscribe?.();
-      if (!showMonitorSidebar) {
-        window.api?.monitor.stop(sessionId);
-      }
+    const config: TerminalLayoutConfig = {
+      sftpWidth: sftpSidebarWidth,
+      monitorWidth: monitorSidebarWidth,
+      showSftp: showSftpSidebar,
+      showMonitor: showMonitorSidebar,
+      sftpPos: sftpPosition,
+      monitorPos: monitorPosition,
     };
-  }, [showMonitorSidebar, sessionId]);
+    try {
+      localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify(config));
+    } catch {}
+  }, [sftpSidebarWidth, monitorSidebarWidth, showSftpSidebar, showMonitorSidebar, sftpPosition, monitorPosition]);
 
-  // Terminal Setup
+  // Terminal Setup & Connection
   useEffect(() => {
     if (!terminalRef.current) return;
 
@@ -327,15 +250,15 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       brightBlue: '#79c0ff',
       brightMagenta: '#d2a8ff',
       brightCyan: '#56d4dd',
-      brightWhite: '#ffffff',
+      brightWhite: '#f0f6fc',
     };
 
     const lightTheme = {
-      background: '#fafafa',
+      background: '#ffffff',
       foreground: '#24292f',
-      cursor: '#0067b8',
+      cursor: '#0969da',
       cursorAccent: '#ffffff',
-      selectionBackground: 'rgba(0, 103, 184, 0.25)',
+      selectionBackground: 'rgba(9, 105, 218, 0.25)',
       black: '#24292f',
       red: '#cf222e',
       green: '#116329',
@@ -356,25 +279,38 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
 
     const term = new XTerm({
       cursorBlink: true,
-      cursorStyle: 'block',
-      fontFamily: 'Cascadia Code, Consolas, monospace',
-      fontSize: 14,
-      lineHeight: 1.2,
-      letterSpacing: 0,
+      cursorStyle: 'bar',
+      fontSize: 13,
+      fontFamily: "Consolas, 'Cascadia Code', 'Fira Code', Menlo, 'Courier New', monospace",
       theme: isLight ? lightTheme : darkTheme,
       allowTransparency: true,
-      scrollback: 10000,
+      smoothScrollDuration: 100,
+      scrollback: 5000,
     });
 
     const fitAddon = new FitAddon();
     const searchAddon = new SearchAddon();
-    const webLinksAddon = new WebLinksAddon();
+    const webLinksAddon = new WebLinksAddon((_event, uri) => {
+      window.open(uri, '_blank');
+    });
 
     term.loadAddon(fitAddon);
     term.loadAddon(searchAddon);
     term.loadAddon(webLinksAddon);
 
     term.open(terminalRef.current);
+
+    // Synchronize remote PTY geometry on every terminal resize
+    const onResizeDispose = term.onResize(({ cols, rows }) => {
+      if (cols > 5 && rows > 2) {
+        window.api?.ssh.resize(sessionId, cols, rows);
+      }
+    });
+
+    // Ensure viewport immediately tracks the bottom line on any keypress
+    const onKeyDispose = term.onKey(() => {
+      term.scrollToBottom();
+    });
 
     // Initial safe fit
     setTimeout(() => {
@@ -390,43 +326,93 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
 
-    // Attach custom keyboard shortcut handler for Ctrl+C, Ctrl+V, Ctrl+Shift+V
+    // Attach custom keyboard shortcut handler for Tab, ArrowDown, ArrowUp, Escape
     term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
-      // Ctrl+C with active selection: copy to clipboard
-      if (event.ctrlKey && !event.shiftKey && !event.altKey && event.code === 'KeyC') {
-        if (term.hasSelection()) {
-          const selection = term.getSelection();
-          if (window.api?.clipboard) {
-            window.api.clipboard.writeText(selection);
-          } else {
-            navigator.clipboard.writeText(selection);
+      if (showAutocompleteRef.current && suggestionsRef.current.length > 0) {
+        if (event.key === 'Tab') {
+          if (event.type === 'keydown') {
+            event.preventDefault();
+            event.stopPropagation();
+            handleApplySuggestion(suggestionsRef.current[selectedSuggestionIndexRef.current]);
           }
-          return false; // Prevent sending SIGINT
+          return false;
         }
-        return true; // No selection: send SIGINT
+        if (event.key === 'ArrowDown') {
+          if (event.type === 'keydown') {
+            event.preventDefault();
+            event.stopPropagation();
+            setSelectedSuggestionIndex((prev) => (prev + 1) % suggestionsRef.current.length);
+          }
+          return false;
+        }
+        if (event.key === 'ArrowUp') {
+          if (event.type === 'keydown') {
+            event.preventDefault();
+            event.stopPropagation();
+            setSelectedSuggestionIndex(
+              (prev) => (prev - 1 + suggestionsRef.current.length) % suggestionsRef.current.length
+            );
+          }
+          return false;
+        }
+        if (event.key === 'Escape') {
+          if (event.type === 'keydown') {
+            event.preventDefault();
+            event.stopPropagation();
+            setShowAutocomplete(false);
+          }
+          return false;
+        }
       }
 
-      // Ctrl+V, Ctrl+Shift+V, or Shift+Insert: paste from clipboard
-      const isPasteShortcut =
-        (event.ctrlKey && !event.altKey && (event.code === 'KeyV' || event.key === 'v' || event.key === 'V')) ||
-        (event.shiftKey && !event.altKey && !event.ctrlKey && event.code === 'Insert');
-
-      if (isPasteShortcut) {
-        if (event.type === 'keydown') {
-          event.preventDefault();
-          event.stopPropagation();
-          handlePasteFromClipboard();
+      // Clipboard shortcuts (Ctrl+Shift+C / Ctrl+Shift+V or Ctrl+C / Ctrl+V when selection)
+      if (event.ctrlKey && event.shiftKey && event.key === 'C') {
+        if (term.hasSelection()) {
+          navigator.clipboard.writeText(term.getSelection());
+          return false;
         }
-        return false;
       }
 
       return true;
     });
 
+    // Handle user keystrokes sent to remote SSH PTY
     const onDataDispose = term.onData((data) => {
+      // Prevent sending keystrokes and accumulating autocomplete buffer when disconnected
+      if (!isConnectedRef.current) {
+        return;
+      }
+
       window.api?.ssh.write(sessionId, data);
+
+      if (!autocompleteEnabledRef.current) {
+        return;
+      }
+
+      // Track buffer for autocomplete
+      if (data === '\r' || data === '\n') {
+        const cmd = typedBufferRef.current.trim();
+        if (cmd && !commandHistoryRef.current.includes(cmd)) {
+          commandHistoryRef.current.unshift(cmd);
+          if (commandHistoryRef.current.length > 30) commandHistoryRef.current.pop();
+        }
+        typedBufferRef.current = '';
+        setShowAutocomplete(false);
+      } else if (data === '\x7f' || data === '\b') {
+        // Backspace
+        typedBufferRef.current = typedBufferRef.current.slice(0, -1);
+        updateSuggestions(typedBufferRef.current);
+      } else if (data === '\x03' || data === '\x15') {
+        // Ctrl+C or Ctrl+U
+        typedBufferRef.current = '';
+        setShowAutocomplete(false);
+      } else if (data.length === 1 && data.charCodeAt(0) >= 32) {
+        typedBufferRef.current += data;
+        updateSuggestions(typedBufferRef.current);
+      }
     });
 
+    // Subscribe to SSH stream output
     const unsubscribeData = window.api?.ssh.onData((payload) => {
       if (payload.sessionId === sessionId) {
         term.write(payload.data);
@@ -436,323 +422,308 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     const unsubscribeClosed = window.api?.ssh.onClosed((payload) => {
       if (payload.sessionId === sessionId) {
         setIsConnected(false);
-        term.write(`\r\n\x1b[31m${t('terminal.sessionClosed')}\x1b[0m\r\n`);
+        isConnectedRef.current = false;
+        setShowAutocomplete(false);
+        typedBufferRef.current = '';
+        term.write('\r\n\x1b[31m[Connection closed by remote host]\x1b[0m\r\n');
       }
     });
 
-    const unsubscribeError = window.api?.ssh.onError((payload) => {
+    const unsubscribeError = window.api?.ssh.onError?.((payload) => {
       if (payload.sessionId === sessionId) {
-        term.write(`\r\n\x1b[31m[SSH Error]: ${payload.error}\x1b[0m\r\n`);
+        setIsConnected(false);
+        isConnectedRef.current = false;
+        setShowAutocomplete(false);
+        typedBufferRef.current = '';
+        term.write(`\r\n\x1b[31m[Connection error: ${payload.error}]\x1b[0m\r\n`);
       }
     });
 
-    // OSC 7 directory tracking
     const unsubscribeDir = window.api?.ssh.onDirectoryChanged((payload) => {
       if (payload.sessionId === sessionId && payload.directory) {
-        setSftpPath(payload.directory);
-        loadSidebarDirectory(payload.directory);
+        setCurrentDirectory(payload.directory);
       }
     });
 
-    // Safe ResizeObserver
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect.width > 50 && entry.contentRect.height > 50) {
-          try {
-            fitAddon.fit();
-            if (term.cols > 10 && term.rows > 4 && window.api?.ssh) {
-              window.api.ssh.resize(sessionId, term.cols, term.rows);
-            }
-          } catch (e) {}
+    // Handle container resize
+    const resizeObserver = new ResizeObserver(() => {
+      try {
+        if (fitAddonRef.current && terminalRef.current) {
+          fitAddonRef.current.fit();
         }
-      }
+      } catch (e) {}
     });
-
     resizeObserver.observe(terminalRef.current);
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.code === 'KeyF') {
-        e.preventDefault();
-        setShowSearch((prev) => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
       resizeObserver.disconnect();
-      onDataDispose.dispose();
       unsubscribeData?.();
       unsubscribeClosed?.();
       unsubscribeError?.();
       unsubscribeDir?.();
+      onResizeDispose.dispose();
+      onKeyDispose.dispose();
+      onDataDispose.dispose();
       term.dispose();
+      xtermInstance.current = null;
     };
   }, [sessionId, isLight]);
 
-  // Handle Tab Visibility Changes: prevent terminal from shifting upwards
+  // Immediate fit and focus when tab becomes active / visible
   useEffect(() => {
-    if (isActive && xtermInstance.current && fitAddonRef.current) {
-      setTimeout(() => {
+    if (isActive) {
+      const rafId = requestAnimationFrame(() => {
         try {
-          fitAddonRef.current?.fit();
-          const term = xtermInstance.current;
-          if (term && term.cols > 10 && term.rows > 4) {
-            window.api?.ssh.resize(sessionId, term.cols, term.rows);
-            term.scrollToBottom();
+          if (fitAddonRef.current && xtermInstance.current) {
+            fitAddonRef.current.fit();
+            const term = xtermInstance.current;
+            if (term.cols > 10 && term.rows > 4 && window.api?.ssh) {
+              window.api.ssh.resize(sessionId, term.cols, term.rows);
+            }
             term.focus();
           }
-        } catch (e) {}
-      }, 60);
+        } catch {}
+      });
+      return () => cancelAnimationFrame(rafId);
     }
-  }, [isActive]);
+  }, [isActive, sessionId]);
 
-  const handleSearchNext = () => {
-    if (searchAddonRef.current && searchQuery) {
-      searchAddonRef.current.findNext(searchQuery);
+  // Initial directory fetch
+  useEffect(() => {
+    window.api?.ssh.getCurrentDirectory(sessionId).then((dir) => {
+      if (dir) setCurrentDirectory(dir);
+    });
+  }, [sessionId]);
+
+  // Cache folder files for autocomplete whenever directory changes
+  useEffect(() => {
+    if (!currentDirectory) return;
+    const clean = sanitizeRemotePath(currentDirectory);
+    window.api?.sftp.list(sessionId, clean).then((res) => {
+      if (res?.files) {
+        cachedDirectoryFilesRef.current = res.files;
+      }
+    }).catch(() => {});
+  }, [sessionId, currentDirectory]);
+
+  // Compute suggestions on typing
+  const updateSuggestions = useCallback((buffer: string) => {
+    if (!isActive) return;
+    const { suggestions: list } = computeSuggestions(
+      buffer,
+      cachedDirectoryFilesRef.current,
+      snippets,
+      commandHistoryRef.current
+    );
+    setSuggestions(list);
+    setSelectedSuggestionIndex(0);
+    setShowAutocomplete(list.length > 0);
+  }, [snippets, isActive]);
+
+  const handleApplySuggestion = (item: SuggestionItem) => {
+    if (!xtermInstance.current || !item) return;
+
+    const raw = typedBufferRef.current;
+    const tokens = raw.trimStart().split(/\s+/);
+    const currentToken = tokens[tokens.length - 1] || '';
+
+    // Send backspaces to delete currently typed incomplete token
+    if (currentToken.length > 0) {
+      const backspaces = '\b \b'.repeat(currentToken.length);
+      window.api?.ssh.write(sessionId, backspaces);
+    }
+
+    // Write full completion
+    window.api?.ssh.write(sessionId, item.insertText);
+
+    // Update internal buffer
+    const prefix = raw.slice(0, raw.length - currentToken.length);
+    typedBufferRef.current = prefix + item.insertText;
+
+    setShowAutocomplete(false);
+  };
+
+  // Reconnection
+  const handleReconnect = async () => {
+    const targetHost = host || hostRef.current;
+    if (!targetHost) {
+      xtermInstance.current?.write('\r\n\x1b[31m[Reconnect error: No host profile available]\x1b[0m\r\n');
+      return;
+    }
+    setIsReconnecting(true);
+    try {
+      xtermInstance.current?.write(`\r\n\x1b[33m[${t('terminal.reconnecting') || 'Reconnecting to server...'}]\x1b[0m\r\n`);
+      const cols = xtermInstance.current?.cols || 80;
+      const rows = xtermInstance.current?.rows || 24;
+      await window.api.ssh.connect(sessionId, targetHost, cols, rows);
+      setIsConnected(true);
+      isConnectedRef.current = true;
+      if (onReconnectSession) {
+        await onReconnectSession(sessionId, targetHost);
+      }
+      xtermInstance.current?.write(`\x1b[32m[${t('terminal.reconnected') || 'Connection restored successfully'}]\x1b[0m\r\n`);
+      xtermInstance.current?.focus();
+    } catch (e: any) {
+      xtermInstance.current?.write(`\x1b[31m[Reconnect failed: ${e.message || String(e)}]\x1b[0m\r\n`);
+    } finally {
+      setIsReconnecting(false);
     }
   };
 
+  // Clear Terminal
   const handleClear = () => {
     xtermInstance.current?.clear();
   };
 
-  const handleSidebarNavigateUp = () => {
-    if (sftpPath === '/' || sftpPath === '') return;
-    const parts = sftpPath.split('/').filter(Boolean);
-    parts.pop();
-    const upPath = '/' + parts.join('/');
-    loadSidebarDirectory(upPath);
-  };
-
-  const handleSidebarFileClick = (file: SFTPFile) => {
-    if (file.isDirectory) {
-      loadSidebarDirectory(file.path);
-    } else {
-      onOpenFileInEditor(file.path, file.name);
+  // Search in Terminal
+  const handleSearchNext = () => {
+    if (searchAddonRef.current && searchTerm) {
+      searchAddonRef.current.findNext(searchTerm);
     }
   };
 
-  // Open folder directly in active terminal
-  const handleOpenFolderInTerminal = (folderPath: string) => {
-    window.api?.ssh.write(sessionId, `cd "${folderPath}"\n`);
+  const handleSearchPrev = () => {
+    if (searchAddonRef.current && searchTerm) {
+      searchAddonRef.current.findPrevious(searchTerm);
+    }
+  };
+
+  // Send command to terminal
+  const handleSendCommand = (cmd: string) => {
+    window.api?.ssh.write(sessionId, cmd);
     xtermInstance.current?.focus();
   };
 
-  const handleKillProcess = async (pid: number) => {
-    if (!confirm(t('monitor.killConfirm').replace('{pid}', String(pid)))) return;
-    try {
-      await window.api?.monitor.killProcess(sessionId, pid, 'SIGTERM');
-    } catch (err: any) {
-      alert(`Kill process failed: ${err.message}`);
-    }
+  // Drag and drop splitter resizing
+  const handleStartResize = (e: React.MouseEvent, panel: 'sftp' | 'monitor', dock: 'left' | 'right') => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    resizeStateRef.current = {
+      panel,
+      dock,
+      startX: e.clientX,
+      startWidth: panel === 'sftp' ? sftpSidebarWidth : monitorSidebarWidth,
+    };
   };
 
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '-';
-    const units = ['B', 'K', 'M', 'G'];
-    let idx = 0;
-    let b = bytes;
-    while (b >= 1024 && idx < units.length - 1) {
-      b /= 1024;
-      idx++;
-    }
-    return `${b.toFixed(idx === 0 ? 0 : 1)}${units[idx]}`;
-  };
-
-  const getFileIcon = (file: SFTPFile) => {
-    if (file.isDirectory) return <Folder className="w-3.5 h-3.5 text-amber-400 fill-amber-400/20 flex-shrink-0" />;
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    if (['json', 'yaml', 'yml', 'js', 'ts', 'py', 'sh', 'php', 'html', 'css', 'conf'].includes(ext || '')) {
-      return <FileCode className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />;
-    }
-    if (['tar', 'gz', 'zip', 'xz', 'bz2', '7z'].includes(ext || '')) {
-      return <FileArchive className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />;
-    }
-    return <FileText className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />;
-  };
-
-  const filteredSidebarFiles = sftpFiles.filter((f) =>
-    f.name.toLowerCase().includes(sftpFilter.toLowerCase())
-  );
-
-  // Close context menu on click anywhere
   useEffect(() => {
-    const handleWindowClick = () => setContextMenu(null);
-    window.addEventListener('click', handleWindowClick);
-    return () => window.removeEventListener('click', handleWindowClick);
-  }, []);
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeStateRef.current) return;
+      const { panel, dock, startX, startWidth } = resizeStateRef.current;
+      const deltaX = dock === 'left' ? e.clientX - startX : startX - e.clientX;
+      const newWidth = Math.max(210, Math.min(600, startWidth + deltaX));
 
-  // Render SFTP Sidebar Component
-  const renderSftpSidebar = () => (
-    <div
-      style={{ width: `${sftpSidebarWidth}px` }}
-      className={`flex flex-col h-full select-none shadow-lg z-10 flex-shrink-0 ${
-        sftpPosition === 'right' ? 'border-l' : 'border-r'
-      } ${
-        isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#1c1c1c] border-[#2c2c2c]'
-      }`}
-    >
-      {/* Sidebar Header & Path Navigation */}
-      <div className={`p-2 border-b flex flex-col space-y-1.5 ${
-        isLight ? 'bg-[#ececec] border-[#e0e0e0]' : 'bg-[#222222] border-[#2c2c2c]'
-      }`}>
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-1">
-            <FolderTree className="w-3.5 h-3.5" />
-            <span>Remote Files</span>
-          </span>
-          <div className="flex items-center space-x-1">
-            {/* Swap Panels Button (when both are shown) */}
-            {showMonitorSidebar && (
-              <button
-                onClick={handleSwapPanels}
-                className="p-1 rounded hover:bg-white/10 text-amber-400 hover:text-amber-300"
-                title={t('terminal.swapPanels')}
-              >
-                <ArrowLeftRight className="w-3.5 h-3.5" />
-              </button>
-            )}
+      if (panel === 'sftp') {
+        setSftpSidebarWidth(newWidth);
+      } else {
+        setMonitorSidebarWidth(newWidth);
+      }
+    };
 
-            {/* Position Switch (Left / Right) */}
-            <button
-              onClick={toggleSftpPosition}
-              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-              title={sftpPosition === 'left' ? t('terminal.dockRight') : t('terminal.dockLeft')}
-            >
-              {sftpPosition === 'left' ? <PanelRight className="w-3.5 h-3.5" /> : <PanelLeft className="w-3.5 h-3.5" />}
-            </button>
+    const handleMouseUp = () => {
+      if (resizeStateRef.current) {
+        resizeStateRef.current = null;
+        setIsResizing(false);
+        setTimeout(() => fitAddonRef.current?.fit(), 30);
+      }
+    };
 
-            <button
-              onClick={handleSidebarNavigateUp}
-              disabled={sftpPath === '/' || sftpPath === ''}
-              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white disabled:opacity-30"
-              title={t('sftp.parentFolder')}
-            >
-              <CornerLeftUp className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => loadSidebarDirectory(sftpPath)}
-              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-              title={t('sftp.refresh')}
-            >
-              <RotateCw className={`w-3.5 h-3.5 ${isSftpLoading ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              onClick={() => {
-                setShowSftpSidebar(false);
-                setTimeout(() => fitAddonRef.current?.fit(), 100);
-              }}
-              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-              title={t('terminal.closeSidebar')}
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isResizing]);
 
-        {/* Path Breadcrumb Display + cd into terminal button */}
-        <div className="flex items-center space-x-1">
-          <div className={`flex-1 px-2 py-0.5 rounded text-[10px] font-mono truncate border ${
-            isLight ? 'bg-white text-slate-700 border-slate-300' : 'bg-[#161616] text-slate-300 border-[#333]'
-          }`} title={sftpPath}>
-            {sftpPath}
-          </div>
-          <button
-            onClick={() => handleOpenFolderInTerminal(sftpPath)}
-            className="px-1.5 py-0.5 rounded bg-sky-600/20 border border-sky-500/30 text-sky-400 hover:bg-sky-600/30 text-[10px] font-mono flex items-center space-x-0.5"
-            title={t('terminal.cdToTerminal')}
-          >
-            <TerminalIcon className="w-3 h-3" />
-            <span>cd</span>
-          </button>
-        </div>
+  // Swap panels positions
+  const handleSwapPanels = () => {
+    const nextSftpPos = sftpPosition === 'left' ? 'right' : 'left';
+    const nextMonPos = monitorPosition === 'left' ? 'right' : 'left';
+    setSftpPosition(nextSftpPos);
+    setMonitorPosition(nextMonPos);
+    setTimeout(() => fitAddonRef.current?.fit(), 100);
+  };
 
-        {/* Quick Filter */}
-        <input
-          type="text"
-          placeholder={t('sftp.filterFiles')}
-          value={sftpFilter}
-          onChange={(e) => setSftpFilter(e.target.value)}
-          className={`w-full px-2 py-0.5 text-[11px] rounded border focus:outline-none focus:border-sky-500 ${
-            isLight ? 'bg-white text-slate-900 border-slate-300' : 'bg-[#181818] text-white border-[#333]'
-          }`}
-        />
-      </div>
+  // Breadcrumb navigation
+  const handleNavigateBreadcrumb = (targetDir: string) => {
+    const clean = sanitizeRemotePath(targetDir);
+    const cdCmd = formatCdCommand(clean);
+    handleSendCommand(cdCmd.endsWith('\n') ? cdCmd : `${cdCmd}\n`);
+    setCurrentDirectory(clean);
+  };
 
-      {/* Sidebar File Tree */}
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-500/10 text-xs font-mono">
-        {filteredSidebarFiles.length === 0 ? (
-          <div className="p-4 text-center text-[11px] text-slate-500">
-            {isSftpLoading ? 'Loading...' : 'Folder is empty'}
-          </div>
-        ) : (
-          filteredSidebarFiles.map((file) => (
-            <div
-              key={file.path}
-              onDoubleClick={() => handleSidebarFileClick(file)}
-              className={`flex items-center justify-between px-2 py-1.5 cursor-pointer group transition-colors ${
-                isLight ? 'hover:bg-slate-200/80 text-slate-800' : 'hover:bg-[#252525] text-slate-200'
-              }`}
-            >
-              <div className="flex items-center space-x-1.5 truncate flex-1 mr-1">
-                {getFileIcon(file)}
-                <span className="truncate text-[11px] font-sans group-hover:font-medium">
-                  {file.name}
-                </span>
-              </div>
+  const handleNavigateUp = () => {
+    if (currentDirectory === '/' || currentDirectory === '') return;
+    const parts = currentDirectory.split('/').filter(Boolean);
+    parts.pop();
+    const upPath = '/' + parts.join('/');
+    handleNavigateBreadcrumb(upPath);
+  };
 
-              <div className="flex items-center space-x-1 text-[10px] text-slate-400 flex-shrink-0">
-                {file.isDirectory && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenFolderInTerminal(file.path);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-sky-500/20 text-sky-400 rounded flex items-center space-x-0.5"
-                    title={`Open in Terminal (cd "${file.path}")`}
-                  >
-                    <TerminalIcon className="w-3 h-3" />
-                  </button>
-                )}
+  const handleCopyPath = () => {
+    navigator.clipboard.writeText(currentDirectory);
+    setIsPathCopied(true);
+    setTimeout(() => setIsPathCopied(false), 2000);
+  };
 
-                <span>{formatSize(file.size)}</span>
-                {!file.isDirectory && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenFileInEditor(file.path, file.name);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-sky-500/20 text-sky-400 rounded"
-                    title="Open in Monaco Editor"
-                  >
-                    <Edit className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
+  // Terminal Drop handling (from Windows Explorer or Local Browser)
+  const handleTerminalDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOverTerminal(false);
+    const targetDir = currentDirectory || host?.defaultPath || '/root';
 
-  // Render Splitter (Resize Handle)
+    // 1. Files from Windows Explorer
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      try {
+        for (const file of Array.from(e.dataTransfer.files)) {
+          const localPath = (file as any).path;
+          if (!localPath) continue;
+          const fileName = file.name || localPath.split(/[\\/]/).pop();
+          const remoteDest = targetDir.endsWith('/') ? `${targetDir}${fileName}` : `${targetDir}/${fileName}`;
+          await window.api.sftp.uploadFile(sessionId, localPath, remoteDest);
+          xtermInstance.current?.write(`\r\n\x1b[32m[BesTTY] Uploaded: ${fileName} -> ${remoteDest}\x1b[0m\r\n`);
+        }
+        window.dispatchEvent(new CustomEvent(EVENT_SFTP_REFRESHED));
+      } catch (err: any) {
+        xtermInstance.current?.write(`\r\n\x1b[31m[BesTTY Upload Failed]: ${err.message || String(err)}\x1b[0m\r\n`);
+      }
+      return;
+    }
+
+    // 2. From Local Files Browser pane
+    const localData = e.dataTransfer.getData('application/x-bestty-local');
+    if (localData) {
+      try {
+        const item = JSON.parse(localData);
+        if (item.path) {
+          const remoteDest = targetDir.endsWith('/') ? `${targetDir}${item.name}` : `${targetDir}/${item.name}`;
+          await window.api.sftp.uploadFile(sessionId, item.path, remoteDest);
+          xtermInstance.current?.write(`\r\n\x1b[32m[BesTTY] Uploaded: ${item.name} -> ${remoteDest}\x1b[0m\r\n`);
+          window.dispatchEvent(new CustomEvent(EVENT_SFTP_REFRESHED));
+        }
+      } catch (err: any) {
+        xtermInstance.current?.write(`\r\n\x1b[31m[BesTTY Upload Failed]: ${err.message || String(err)}\x1b[0m\r\n`);
+      }
+    }
+  };
+
+  // Render Splitter bar
   const renderSplitter = (panel: 'sftp' | 'monitor', dock: 'left' | 'right') => {
     const isSftp = panel === 'sftp';
     return (
       <div
         onMouseDown={(e) => handleStartResize(e, panel, dock)}
         onDoubleClick={() => {
-          if (isSftp) {
-            setSftpSidebarWidth(288);
-          } else {
-            setMonitorSidebarWidth(288);
-          }
+          if (isSftp) setSftpSidebarWidth(288);
+          else setMonitorSidebarWidth(288);
           setTimeout(() => fitAddonRef.current?.fit(), 50);
         }}
         title={t('terminal.resizerTooltip')}
-        className={`w-1 hover:w-1.5 cursor-col-resize flex-shrink-0 relative group select-none transition-all z-20 ${
+        className={`w-1 hover:w-1.5 cursor-col-resize flex-shrink-0 relative group select-none z-20 ${
           isLight
             ? 'bg-slate-200/90 hover:bg-sky-400 active:bg-sky-500'
             : isSftp
@@ -760,445 +731,356 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
               : 'bg-[#2a2a2a] hover:bg-purple-500/80 active:bg-purple-500'
         } ${isResizing ? (isSftp ? 'bg-sky-500 w-1.5' : 'bg-purple-500 w-1.5') : ''}`}
       >
-        {/* Expanded hit target for effortless grabbing */}
         <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize" />
       </div>
     );
   };
 
-  // Render Mini-Monitor Sidebar Component
-  const renderMiniMonitorSidebar = () => (
-    <div
-      style={{ width: `${monitorSidebarWidth}px` }}
-      className={`flex flex-col h-full select-none shadow-lg z-10 flex-shrink-0 ${
-        monitorPosition === 'right' ? 'border-l' : 'border-r'
-      } ${
-        isLight ? 'bg-[#f4f4f4] border-[#e0e0e0]' : 'bg-[#1c1c1c] border-[#2c2c2c]'
-      }`}
-    >
-      {/* Mini-Monitor Header */}
-      <div className={`p-2 border-b flex items-center justify-between ${
-        isLight ? 'bg-[#ececec] border-[#e0e0e0]' : 'bg-[#222222] border-[#2c2c2c]'
-      }`}>
-        <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider flex items-center space-x-1.5">
-          <Activity className="w-3.5 h-3.5" />
-          <span>Mini Monitor</span>
-        </span>
-        <div className="flex items-center space-x-1">
-          {/* Swap Panels Button (when both are shown) */}
-          {showSftpSidebar && (
-            <button
-              onClick={handleSwapPanels}
-              className="p-1 rounded hover:bg-white/10 text-amber-400 hover:text-amber-300"
-              title={t('terminal.swapPanels')}
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {/* Position Switch */}
-          <button
-            onClick={toggleMonitorPosition}
-            className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-            title={monitorPosition === 'left' ? t('terminal.dockRight') : t('terminal.dockLeft')}
-          >
-            {monitorPosition === 'left' ? <PanelRight className="w-3.5 h-3.5" /> : <PanelLeft className="w-3.5 h-3.5" />}
-          </button>
-
-          <button
-            onClick={() => {
-              setShowMonitorSidebar(false);
-              setTimeout(() => fitAddonRef.current?.fit(), 100);
-            }}
-            className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-            title={t('terminal.closeSidebar')}
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Mini-Monitor Body */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-3 text-xs">
-        {!metrics ? (
-          <div className="p-4 text-center text-slate-500 flex flex-col items-center space-y-2">
-            <Activity className="w-5 h-5 animate-pulse text-purple-400" />
-            <span className="text-[11px]">{t('monitor.gathering')}</span>
-          </div>
-        ) : (
-          <>
-            {/* CPU Gauge Card */}
-            <div className={`p-2 rounded-lg border ${
-              isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
-            }`}>
-              <div className="flex items-center justify-between text-[11px] mb-1">
-                <span className="text-slate-400 flex items-center space-x-1">
-                  <Cpu className="w-3 h-3 text-sky-400" />
-                  <span>CPU Usage</span>
-                </span>
-                <span className="font-mono font-bold text-sky-400">
-                  {metrics.cpuUsage.toFixed(1)}%
-                </span>
-              </div>
-              {/* Progress bar */}
-              <div className="w-full h-1.5 bg-slate-700/30 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-500 rounded-full ${
-                    metrics.cpuUsage > 85
-                      ? 'bg-rose-500'
-                      : metrics.cpuUsage > 60
-                      ? 'bg-amber-500'
-                      : 'bg-sky-500'
-                  }`}
-                  style={{ width: `${Math.min(100, Math.max(0, metrics.cpuUsage))}%` }}
-                />
-              </div>
-              <div className="mt-1 text-[10px] text-slate-500 font-mono">
-                Load: {metrics.loadAvg.join(' ')}
-              </div>
-            </div>
-
-            {/* RAM Memory Card */}
-            <div className={`p-2 rounded-lg border ${
-              isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
-            }`}>
-              <div className="flex items-center justify-between text-[11px] mb-1">
-                <span className="text-slate-400 flex items-center space-x-1">
-                  <Layers className="w-3 h-3 text-emerald-400" />
-                  <span>RAM Memory</span>
-                </span>
-                <span className="font-mono font-bold text-emerald-400">
-                  {metrics.memoryPercent}%
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-700/30 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-500 rounded-full ${
-                    metrics.memoryPercent > 85
-                      ? 'bg-rose-500'
-                      : metrics.memoryPercent > 65
-                      ? 'bg-amber-500'
-                      : 'bg-emerald-500'
-                  }`}
-                  style={{ width: `${Math.min(100, Math.max(0, metrics.memoryPercent))}%` }}
-                />
-              </div>
-              <div className="mt-1 flex justify-between text-[10px] text-slate-500 font-mono">
-                <span>{(metrics.memoryUsed / 1024).toFixed(1)} GB used</span>
-                <span>{(metrics.memoryTotal / 1024).toFixed(1)} GB total</span>
-              </div>
-            </div>
-
-            {/* Disks */}
-            {metrics.disks && metrics.disks.length > 0 && (
-              <div className={`p-2 rounded-lg border ${
-                isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
-              }`}>
-                <div className="text-[11px] text-slate-400 flex items-center space-x-1 mb-1.5">
-                  <HardDrive className="w-3 h-3 text-amber-400" />
-                  <span>Disks</span>
-                </div>
-                <div className="space-y-1.5">
-                  {metrics.disks.slice(0, 3).map((d, i) => (
-                    <div key={i} className="text-[10px]">
-                      <div className="flex justify-between text-slate-400 font-mono">
-                        <span className="truncate max-w-[120px]">{d.mount}</span>
-                        <span className="font-semibold">{d.percent}%</span>
-                      </div>
-                      <div className="w-full h-1 bg-slate-700/30 rounded-full overflow-hidden mt-0.5">
-                        <div
-                          className="h-full bg-amber-500 rounded-full"
-                          style={{ width: `${Math.min(100, d.percent)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Top Running Processes */}
-            <div className={`p-2 rounded-lg border flex-1 ${
-              isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
-            }`}>
-              <div className="text-[11px] text-slate-400 flex items-center justify-between mb-1.5">
-                <span className="font-semibold">Top Processes</span>
-                <span className="text-[9px] text-slate-500">CPU / MEM</span>
-              </div>
-              <div className="divide-y divide-slate-700/20 font-mono text-[10px]">
-                {processes.slice(0, 5).map((proc) => (
-                  <div key={proc.pid} className="py-1 flex items-center justify-between group">
-                    <div className="truncate flex-1 mr-1">
-                      <div className="font-medium text-slate-300 truncate" title={proc.command}>
-                        {proc.command.split(' ')[0]}
-                      </div>
-                      <div className="text-slate-500 text-[9px]">PID: {proc.pid} ({proc.user})</div>
-                    </div>
-                    <div className="flex items-center space-x-1.5">
-                      <span className="text-sky-400 font-semibold">{proc.cpu.toFixed(0)}%</span>
-                      <span className="text-slate-400">{proc.mem.toFixed(0)}%</span>
-                      <button
-                        onClick={() => handleKillProcess(proc.pid)}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-rose-500/20 text-rose-400 rounded"
-                        title="SIGTERM process"
-                      >
-                        <Trash2 className="w-2.5 h-2.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden relative ${
       isLight ? 'bg-[#fafafa] text-slate-800' : 'bg-[#181818] text-slate-100'
     }`}>
-      {/* Terminal Mini Toolbar */}
-      <div className={`h-8 border-b flex items-center justify-between px-3 text-xs select-none ${
-        isLight ? 'bg-[#f0f0f0] border-[#e0e0e0]' : 'bg-[#202020] border-[#2d2d2d]'
-      }`}>
-        <div className="flex items-center space-x-2 font-mono text-[11px]">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'
-            }`}
-          />
-          <span className={`font-semibold truncate max-w-[200px] ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>
-            {host ? `${host.username}@${host.host}` : 'SSH Session'}
-          </span>
-          <span className="text-slate-500">|</span>
-          <span className="text-slate-400 text-[10px]">xterm-256color</span>
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center space-x-1">
-          {/* Clipboard Paste Toolbar Button */}
-          <button
-            onClick={handlePasteFromClipboard}
-            className="flex items-center space-x-1 px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/20 text-[11px] font-medium transition-colors"
-            title={`${t('terminal.paste')} (Ctrl+V)`}
-          >
-            <Clipboard className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{t('terminal.paste')}</span>
-          </button>
-
-          {/* Duplicate Session Magic Lightning Button */}
-          <button
-            onClick={onDuplicateSession}
-            className="flex items-center space-x-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 text-[11px] font-semibold transition-all shadow-sm"
-            title={t('titlebar.duplicateTab')}
-          >
-            <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-            <span className="hidden sm:inline">{t('titlebar.duplicateTabShort')}</span>
-          </button>
-
-          {/* SFTP Sidebar Toggle Button */}
-          <button
-            onClick={handleToggleSftpSidebar}
-            className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-              showSftpSidebar
-                ? isLight ? 'bg-sky-100 text-sky-800 border border-sky-300' : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                : isLight ? 'text-slate-600 hover:bg-slate-200' : 'text-slate-400 hover:bg-white/10'
-            }`}
-            title={t('terminal.toggleSidebar')}
-          >
-            <FolderTree className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{t('terminal.sftpFiles')}</span>
-          </button>
-
-          {/* Mini-Monitor Sidebar Toggle Button */}
-          <button
-            onClick={handleToggleMonitorSidebar}
-            className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-              showMonitorSidebar
-                ? isLight ? 'bg-purple-100 text-purple-800 border border-purple-300' : 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
-                : isLight ? 'text-slate-600 hover:bg-slate-200' : 'text-slate-400 hover:bg-white/10'
-            }`}
-            title={t('terminal.toggleMiniMonitor')}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{t('terminal.miniMonitor')}</span>
-          </button>
-
-          {/* Swap Panels button if both sidebars are active */}
-          {showSftpSidebar && showMonitorSidebar && (
-            <button
-              onClick={handleSwapPanels}
-              className="p-1 rounded text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors"
-              title={t('terminal.swapPanels')}
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          <button
-            onClick={() => setShowSearch(!showSearch)}
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-            title="Search in terminal (Ctrl+F)"
-          >
-            <Search className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={handleClear}
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-            title={t('terminal.clear')}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-          <div className="h-4 w-px bg-slate-500/20 mx-1" />
-          <button
-            onClick={onOpenMonitor}
-            className="flex items-center space-x-1 px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 text-[11px] font-medium transition-colors"
-            title="Open Server Resource Monitor"
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{t('terminal.monitor')}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Floating Search Bar */}
-      {showSearch && (
-        <div className={`absolute top-9 right-4 border rounded-lg p-1.5 shadow-2xl flex items-center space-x-2 z-20 ${
-          isLight ? 'bg-white border-slate-300' : 'bg-[#252525] border-[#3d3d3d]'
-        }`}>
-          <Search className="w-3.5 h-3.5 text-slate-400 ml-1" />
-          <input
-            type="text"
-            placeholder={t('terminal.searchPlaceholder')}
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              searchAddonRef.current?.findNext(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSearchNext();
-              if (e.key === 'Escape') setShowSearch(false);
-            }}
-            autoFocus
-            className={`border rounded px-2 py-0.5 text-xs focus:outline-none focus:border-sky-500 w-44 ${
-              isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-[#181818] text-white border-[#444]'
-            }`}
-          />
-          <button
-            onClick={handleSearchNext}
-            className="text-[11px] px-2 py-0.5 bg-sky-600 rounded text-white hover:bg-sky-500 font-medium"
-          >
-            {t('terminal.next')}
-          </button>
-          <button
-            onClick={() => setShowSearch(false)}
-            className="p-1 text-slate-400 hover:text-white"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* Right-click Context Menu */}
-      {contextMenu && (
-        <div
-          className={`fixed z-50 border rounded-lg shadow-2xl py-1 text-xs select-none min-w-[170px] ${
-            isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-[#252525] border-[#3d3d3d] text-slate-200'
-          }`}
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => {
-              handlePasteFromClipboard();
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3 py-1.5 hover:bg-sky-500/15 hover:text-sky-400 flex items-center justify-between"
-          >
-            <span>{t('terminal.contextPaste')}</span>
-            <span className="text-[10px] text-slate-500">Ctrl+V</span>
-          </button>
-          <button
-            onClick={() => {
-              if (xtermInstance.current?.hasSelection()) {
-                const sel = xtermInstance.current.getSelection();
-                if (window.api?.clipboard) {
-                  window.api.clipboard.writeText(sel);
-                } else {
-                  navigator.clipboard.writeText(sel);
-                }
-              }
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3 py-1.5 hover:bg-sky-500/15 hover:text-sky-400 flex items-center justify-between"
-          >
-            <span>{t('terminal.contextCopy')}</span>
-            <span className="text-[10px] text-slate-500">Ctrl+C</span>
-          </button>
-          <div className="h-px bg-slate-500/20 my-1" />
-          <button
-            onClick={() => {
-              xtermInstance.current?.selectAll();
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3 py-1.5 hover:bg-sky-500/15 hover:text-sky-400"
-          >
-            {t('terminal.contextSelectAll')}
-          </button>
-          <button
-            onClick={() => {
-              handleClear();
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3 py-1.5 hover:bg-sky-500/15 hover:text-sky-400"
-          >
-            {t('terminal.contextClear')}
-          </button>
-        </div>
-      )}
-
       {/* Main Split Layout: Left Panel + Center Terminal + Right Panel */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden relative min-h-0">
         {/* Left Side Slot */}
         {showSftpSidebar && sftpPosition === 'left' && (
           <>
-            {renderSftpSidebar()}
+            <TerminalSftpSidebar
+              sessionId={sessionId}
+              width={sftpSidebarWidth}
+              position="left"
+              currentPath={currentDirectory}
+              showMonitorSidebar={showMonitorSidebar}
+              isLight={isLight}
+              folderClickMode={folderClickMode}
+              t={t}
+              onSwapPanels={handleSwapPanels}
+              onTogglePosition={() => {
+                setSftpPosition('right');
+                setTimeout(() => fitAddonRef.current?.fit(), 100);
+              }}
+              onClose={() => {
+                setShowSftpSidebar(false);
+                setTimeout(() => fitAddonRef.current?.fit(), 100);
+              }}
+              onOpenFileInEditor={onOpenFileInEditor}
+              onNavigateFolderInTerminal={(path) => handleNavigateBreadcrumb(path)}
+            />
             {renderSplitter('sftp', 'left')}
           </>
         )}
+
         {showMonitorSidebar && monitorPosition === 'left' && (
           <>
-            {renderMiniMonitorSidebar()}
+            <TerminalMiniMonitor
+              sessionId={sessionId}
+              width={monitorSidebarWidth}
+              position="left"
+              showSftpSidebar={showSftpSidebar}
+              isLight={isLight}
+              t={t}
+              onSwapPanels={handleSwapPanels}
+              onTogglePosition={() => {
+                setMonitorPosition('right');
+                setTimeout(() => fitAddonRef.current?.fit(), 100);
+              }}
+              onClose={() => {
+                setShowMonitorSidebar(false);
+                setTimeout(() => fitAddonRef.current?.fit(), 100);
+              }}
+              onSendTerminalCommand={handleSendCommand}
+            />
             {renderSplitter('monitor', 'left')}
           </>
         )}
 
-        {/* Center Terminal Canvas */}
-        <div
-          ref={terminalRef}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setContextMenu({ x: e.clientX, y: e.clientY });
-          }}
-          className={`flex-1 h-full p-1 overflow-hidden ${isResizing ? 'pointer-events-none' : ''}`}
-        />
+        {/* Center Terminal Column */}
+        <div className="flex-1 flex flex-col h-full overflow-hidden relative min-w-0">
+          {/* Mini Toolbar inside Terminal Zone */}
+          <div className={`h-8 border-b flex items-center justify-between px-3 text-xs select-none flex-shrink-0 ${
+            isLight ? 'bg-[#f0f0f0] border-[#e0e0e0]' : 'bg-[#202020] border-[#2d2d2d]'
+          }`}>
+            {/* Left: Session info & search */}
+            <div className="flex items-center space-x-2 min-w-0">
+              <div className="flex items-center space-x-1.5 font-mono text-[11px] min-w-0">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'
+                }`} />
+                <span className={`font-semibold truncate max-w-[150px] ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>
+                  {host || hostRef.current ? `${(host || hostRef.current)!.username}@${(host || hostRef.current)!.host}` : 'SSH'}
+                </span>
+                {!isConnected && (
+                  <span className="text-[10px] text-red-400 font-sans font-medium px-1.5 py-0.2 bg-red-500/10 rounded border border-red-500/20 flex-shrink-0">
+                    {t('terminal.disconnected') || 'Отключено'}
+                  </span>
+                )}
+              </div>
+
+              {/* Search Toggle */}
+              <button
+                onClick={() => setShowSearch(!showSearch)}
+                className={`p-1 rounded transition-colors flex-shrink-0 ${
+                  showSearch ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white'
+                }`}
+                title={t('terminal.search')}
+              >
+                <Search className="w-3.5 h-3.5" />
+              </button>
+
+              {showSearch && (
+                <div className="flex items-center space-x-1 bg-black/40 px-1.5 py-0.5 rounded border border-slate-700 flex-shrink-0">
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        if (e.shiftKey) handleSearchPrev();
+                        else handleSearchNext();
+                      }
+                    }}
+                    placeholder={t('terminal.search')}
+                    className="bg-transparent border-none outline-none text-[11px] w-24 text-white font-mono"
+                    autoFocus
+                  />
+                  <button onClick={handleSearchPrev} className="text-slate-400 hover:text-white text-[10px]">▲</button>
+                  <button onClick={handleSearchNext} className="text-slate-400 hover:text-white text-[10px]">▼</button>
+                  <button onClick={() => setShowSearch(false)} className="text-slate-400 hover:text-white">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Right: Quick actions & Terminal Actions flush to right edge (adjacent to right divider line) */}
+            <div className="flex items-center space-x-1 flex-shrink-0">
+              {/* Toggle SFTP Sidebar */}
+              <button
+                onClick={() => {
+                  setShowSftpSidebar(!showSftpSidebar);
+                  setTimeout(() => fitAddonRef.current?.fit(), 100);
+                }}
+                className={`p-1 rounded transition-colors ${
+                  showSftpSidebar ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Toggle SFTP Files Sidebar"
+              >
+                <FolderTree className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Toggle Mini-Monitor Sidebar */}
+              <button
+                onClick={() => {
+                  setShowMonitorSidebar(!showMonitorSidebar);
+                  setTimeout(() => fitAddonRef.current?.fit(), 100);
+                }}
+                className={`p-1 rounded transition-colors ${
+                  showMonitorSidebar ? 'bg-purple-500/20 text-purple-400' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Toggle Mini-Monitor Sidebar"
+              >
+                <Activity className="w-3.5 h-3.5" />
+              </button>
+
+              <div className="w-[1px] h-3.5 bg-slate-700/50 mx-1" />
+
+              {/* Reconnect Button */}
+              {(!isConnected || isReconnecting) && (
+                <button
+                  onClick={handleReconnect}
+                  disabled={isReconnecting}
+                  className={`flex items-center space-x-1 px-2.5 py-0.5 rounded text-[11px] font-medium transition-all shadow-sm cursor-pointer ${
+                    isReconnecting
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-wait'
+                      : 'bg-emerald-600 hover:bg-emerald-500 text-white font-semibold'
+                  }`}
+                  title={t('terminal.reconnect')}
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${isReconnecting ? 'animate-spin' : ''}`} />
+                  <span>{isReconnecting ? (t('terminal.reconnecting') || 'Подключение...') : (t('terminal.reconnect') || 'Переподключиться')}</span>
+                </button>
+              )}
+
+              {/* Snippets Launcher */}
+              {snippets.length > 0 && (
+                <div className="relative" ref={snippetDropdownRef}>
+                  <button
+                    onClick={() => setShowSnippetDropdown(!showSnippetDropdown)}
+                    className="flex items-center space-x-1 px-1.5 py-0.5 rounded hover:bg-white/10 text-amber-400 text-[11px] transition-colors"
+                    title={t('snippets.title')}
+                  >
+                    <Code className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline text-[10px]">{t('snippets.title')}</span>
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+
+                  {showSnippetDropdown && (
+                    <div
+                      className={`absolute right-0 mt-1 w-64 max-h-60 overflow-y-auto rounded-xl border shadow-2xl p-1 z-50 text-xs ${
+                        isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-[#222222] border-[#3a3a3a] text-slate-100'
+                      }`}
+                    >
+                      <div className="px-2 py-1 text-[10px] font-bold text-slate-400 border-b border-slate-700/40 uppercase">
+                        {t('snippets.title')}
+                      </div>
+                      {snippets.map((snip) => (
+                        <button
+                          key={snip.id}
+                          onClick={() => {
+                            handleSendCommand(snip.command.endsWith('\n') ? snip.command : `${snip.command}\n`);
+                            setShowSnippetDropdown(false);
+                          }}
+                          className="w-full text-left px-2 py-1.5 rounded hover:bg-sky-500/20 flex items-center justify-between group"
+                        >
+                          <span className="font-medium truncate mr-2">{snip.name}</span>
+                          <Play className="w-3 h-3 text-sky-400 opacity-0 group-hover:opacity-100" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Clear screen */}
+              <button
+                onClick={handleClear}
+                className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                title={t('terminal.clear')}
+              >
+                <Broom className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Center Terminal Canvas */}
+          <div
+            ref={terminalRef}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu({ x: e.clientX, y: e.clientY });
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!isDragOverTerminal) setIsDragOverTerminal(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                setIsDragOverTerminal(false);
+              }
+            }}
+            onDrop={handleTerminalDrop}
+            className={`flex-1 h-full p-1 overflow-hidden relative ${isResizing ? 'pointer-events-none select-none' : ''}`}
+          >
+            {/* Disconnected Overlay Banner */}
+            {!isConnected && (
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-2.5 px-3 py-1.5 rounded-lg bg-red-950/85 border border-red-500/40 text-red-200 text-xs shadow-xl backdrop-blur-sm">
+                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                <span>{t('terminal.disconnected') || 'Сессия отключена'}</span>
+                <button
+                  onClick={handleReconnect}
+                  disabled={isReconnecting}
+                  className="flex items-center space-x-1 px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-[11px] transition-colors shadow cursor-pointer"
+                >
+                  <RotateCw className={`w-3 h-3 ${isReconnecting ? 'animate-spin' : ''}`} />
+                  <span>{isReconnecting ? (t('terminal.reconnecting') || 'Подключение...') : (t('terminal.reconnect') || 'Переподключиться')}</span>
+                </button>
+              </div>
+            )}
+
+            {/* File Drop Overlay */}
+            <TerminalDropOverlay
+              isDragOver={isDragOverTerminal}
+              currentDirectory={currentDirectory}
+              defaultPath={host?.defaultPath || hostRef.current?.defaultPath}
+              titleText={t('terminal.dropUploadTitle') || 'Загрузить файлы в терминал'}
+              hintText={t('split.dragHint') || 'Отпустите файлы для немедленной загрузки на сервер'}
+            />
+
+            {/* Autocomplete Floating Popup */}
+            {showAutocomplete && isConnected && (
+              <TerminalAutocomplete
+                suggestions={suggestions}
+                selectedIndex={selectedSuggestionIndex}
+                isLight={isLight}
+                hintText={t('terminal.autocompleteHint')}
+                titleText={t('terminal.autocomplete')}
+                onApply={handleApplySuggestion}
+                onHoverIndex={setSelectedSuggestionIndex}
+              />
+            )}
+          </div>
+        </div>
 
         {/* Right Side Slot */}
         {showMonitorSidebar && monitorPosition === 'right' && (
           <>
             {renderSplitter('monitor', 'right')}
-            {renderMiniMonitorSidebar()}
+            <TerminalMiniMonitor
+              sessionId={sessionId}
+              width={monitorSidebarWidth}
+              position="right"
+              showSftpSidebar={showSftpSidebar}
+              isLight={isLight}
+              t={t}
+              onSwapPanels={handleSwapPanels}
+              onTogglePosition={() => {
+                setMonitorPosition('left');
+                setTimeout(() => fitAddonRef.current?.fit(), 100);
+              }}
+              onClose={() => {
+                setShowMonitorSidebar(false);
+                setTimeout(() => fitAddonRef.current?.fit(), 100);
+              }}
+              onSendTerminalCommand={handleSendCommand}
+            />
           </>
         )}
+
         {showSftpSidebar && sftpPosition === 'right' && (
           <>
             {renderSplitter('sftp', 'right')}
-            {renderSftpSidebar()}
+            <TerminalSftpSidebar
+              sessionId={sessionId}
+              width={sftpSidebarWidth}
+              position="right"
+              currentPath={currentDirectory}
+              showMonitorSidebar={showMonitorSidebar}
+              isLight={isLight}
+              folderClickMode={folderClickMode}
+              t={t}
+              onSwapPanels={handleSwapPanels}
+              onTogglePosition={() => {
+                setSftpPosition('left');
+                setTimeout(() => fitAddonRef.current?.fit(), 100);
+              }}
+              onClose={() => {
+                setShowSftpSidebar(false);
+                setTimeout(() => fitAddonRef.current?.fit(), 100);
+              }}
+              onOpenFileInEditor={onOpenFileInEditor}
+              onNavigateFolderInTerminal={(path) => handleNavigateBreadcrumb(path)}
+            />
           </>
         )}
       </div>
+
+      {/* Bottom: Breadcrumbs & Directory Sync Bar */}
+      <TerminalBreadcrumbs
+        sessionId={sessionId}
+        currentDirectory={currentDirectory}
+        isLight={isLight}
+        syncConfig={syncConfig}
+        onUpdateSyncConfig={updateSyncConfig}
+        onNavigateBreadcrumb={handleNavigateBreadcrumb}
+        onNavigateUp={handleNavigateUp}
+        onOpenInSftp={() => onOpenSftp(currentDirectory)}
+        onCopyPath={handleCopyPath}
+        isPathCopied={isPathCopied}
+        t={t}
+      />
     </div>
   );
-};
+});
