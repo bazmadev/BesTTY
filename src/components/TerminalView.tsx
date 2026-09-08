@@ -221,6 +221,13 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     showAutocompleteRef.current = showAutocomplete;
   }, [showAutocomplete]);
 
+  const [autocompletePos, setAutocompletePos] = useState<{
+    top?: number;
+    bottom?: number;
+    left?: number;
+    right?: number;
+  } | undefined>(undefined);
+
   const typedBufferRef = useRef('');
   const commandHistoryRef = useRef<string[]>([]);
   const cachedDirectoryFilesRef = useRef<SFTPFile[]>([]);
@@ -559,14 +566,14 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
       } else if (data === '\x7f' || data === '\b') {
         // Backspace
         typedBufferRef.current = typedBufferRef.current.slice(0, -1);
-        updateSuggestions(typedBufferRef.current);
+        updateSuggestionsRef.current(typedBufferRef.current);
       } else if (data === '\x03' || data === '\x15') {
         // Ctrl+C or Ctrl+U
         typedBufferRef.current = '';
         setShowAutocomplete(false);
       } else if (data.length === 1 && data.charCodeAt(0) >= 32) {
         typedBufferRef.current += data;
-        updateSuggestions(typedBufferRef.current);
+        updateSuggestionsRef.current(typedBufferRef.current);
       }
     });
 
@@ -664,6 +671,53 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     }).catch(() => {});
   }, [sessionId, currentDirectory]);
 
+  // Dynamically position autocomplete popup above and to the right of cursor
+  const updateAutocompletePosition = useCallback(() => {
+    if (!xtermInstance.current || !terminalRef.current) return;
+    const term = xtermInstance.current;
+    const containerEl = terminalRef.current;
+    const containerRect = containerEl.getBoundingClientRect();
+    if (term.cols <= 0 || term.rows <= 0 || containerRect.width <= 0) return;
+
+    const screenEl = containerEl.querySelector('.xterm-screen') as HTMLElement | null;
+    const screenRect = screenEl ? screenEl.getBoundingClientRect() : containerRect;
+    const cellWidth = (screenEl?.clientWidth || containerRect.width) / term.cols;
+    const cellHeight = (screenEl?.clientHeight || containerRect.height) / term.rows;
+    const screenOffsetX = screenRect.left - containerRect.left;
+    const screenOffsetY = screenRect.top - containerRect.top;
+
+    const cursorX = term.buffer.active.cursorX;
+    const cursorY = term.buffer.active.cursorY;
+
+    const cursorLeft = screenOffsetX + cursorX * cellWidth;
+    const cursorTop = screenOffsetY + cursorY * cellHeight;
+
+    if (isNaN(cursorLeft) || isNaN(cursorTop)) return;
+
+    const popupWidth = 320;
+    // Always position slightly to the right of the cursor
+    let left = Math.round(cursorLeft + 24);
+    // If overflowing container on the right, shift left to stay inside
+    if (left + popupWidth > containerRect.width - 16) {
+      left = Math.max(12, Math.round(containerRect.width - popupWidth - 16));
+    }
+
+    // Always position above the active line if room permits (at least 140px above line)
+    // Anchoring to bottom ensures the prompt row and typed characters are never covered
+    if (cursorTop >= 140) {
+      setAutocompletePos({
+        left,
+        bottom: Math.max(8, Math.round(containerRect.height - cursorTop + 6)),
+      });
+    } else {
+      // If at the very top of terminal where space above is lacking, position just below active line
+      setAutocompletePos({
+        left,
+        top: Math.round(cursorTop + cellHeight + 6),
+      });
+    }
+  }, []);
+
   // Compute suggestions on typing
   const updateSuggestions = useCallback((buffer: string) => {
     if (!isActive) return;
@@ -675,8 +729,20 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     );
     setSuggestions(list);
     setSelectedSuggestionIndex(0);
-    setShowAutocomplete(list.length > 0);
-  }, [snippets, isActive]);
+    const shouldShow = list.length > 0;
+    setShowAutocomplete(shouldShow);
+    if (shouldShow) {
+      updateAutocompletePosition();
+      requestAnimationFrame(() => {
+        updateAutocompletePosition();
+      });
+    }
+  }, [snippets, isActive, updateAutocompletePosition]);
+
+  const updateSuggestionsRef = useRef(updateSuggestions);
+  useEffect(() => {
+    updateSuggestionsRef.current = updateSuggestions;
+  }, [updateSuggestions]);
 
   const handleApplySuggestion = (item: SuggestionItem) => {
     if (!xtermInstance.current || !item) return;
@@ -1183,6 +1249,7 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
                 isLight={isLight}
                 hintText={t('terminal.autocompleteHint')}
                 titleText={t('terminal.autocomplete')}
+                position={autocompletePos}
                 onApply={handleApplySuggestion}
                 onHoverIndex={setSelectedSuggestionIndex}
               />

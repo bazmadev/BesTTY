@@ -193,6 +193,12 @@ interface TerminalAutocompleteProps {
   isLight: boolean;
   hintText: string;
   titleText: string;
+  position?: {
+    top?: number;
+    bottom?: number;
+    left?: number;
+    right?: number;
+  };
   onApply: (item: SuggestionItem) => void;
   onHoverIndex: (index: number) => void;
 }
@@ -203,6 +209,7 @@ export const TerminalAutocomplete: React.FC<TerminalAutocompleteProps> = React.m
   isLight,
   hintText,
   titleText,
+  position,
   onApply,
   onHoverIndex,
 }) => {
@@ -210,7 +217,13 @@ export const TerminalAutocomplete: React.FC<TerminalAutocompleteProps> = React.m
 
   return (
     <div
-      className={`absolute bottom-2 left-3 z-40 w-80 max-w-[calc(100%-1.5rem)] rounded-xl border shadow-2xl overflow-hidden text-xs backdrop-blur-md transition-all ${
+      style={{
+        top: position?.top !== undefined ? `${position.top}px` : undefined,
+        bottom: position?.bottom !== undefined ? `${position.bottom}px` : (position?.top === undefined ? '8px' : undefined),
+        left: position?.left !== undefined ? `${position.left}px` : '12px',
+        right: position?.right !== undefined ? `${position.right}px` : undefined,
+      }}
+      className={`absolute z-40 w-80 max-w-[calc(100%-1.5rem)] rounded-xl border shadow-2xl overflow-hidden text-xs backdrop-blur-md transition-all duration-75 ${
         isLight
           ? 'bg-white/95 border-slate-300 text-slate-800 shadow-slate-400/40'
           : 'bg-[#222222]/95 border-[#3d3d3d] text-slate-100 shadow-black/80'
