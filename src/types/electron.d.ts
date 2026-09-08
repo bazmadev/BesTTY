@@ -44,7 +44,7 @@ declare global {
         list: (sessionId: string, path?: string, forceRefresh?: boolean) => Promise<{ currentPath: string; files: SFTPFile[] }>;
         readFile: (sessionId: string, remotePath: string) => Promise<string>;
         writeFile: (sessionId: string, remotePath: string, content: string) => Promise<void>;
-        sudoWriteFile: (sessionId: string, remotePath: string, content: string) => Promise<void>;
+        sudoWriteFile: (sessionId: string, remotePath: string, content: string, sudoPassword?: string) => Promise<void>;
         mkdir: (sessionId: string, remotePath: string) => Promise<void>;
         delete: (sessionId: string, remotePath: string, isDirectory: boolean) => Promise<void>;
         rename: (sessionId: string, oldPath: string, newPath: string) => Promise<void>;

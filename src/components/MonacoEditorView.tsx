@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import '../utils/monacoSetup';
 import Editor, { DiffEditor } from '@monaco-editor/react';
-import { Save, ShieldAlert, GitCompare, Check, AlertCircle, RefreshCw, X } from 'lucide-react';
+import { Save, ShieldAlert, GitCompare, Check, AlertCircle, RefreshCw, X, Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from '../i18n';
 
 interface MonacoEditorViewProps {
@@ -29,6 +29,12 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
   const [saveMessage, setSaveMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [isDiffMode, setIsDiffMode] = useState<boolean>(false);
   const [isDirty, setIsDirty] = useState<boolean>(false);
+
+  // Sudo password prompt state
+  const [showSudoPrompt, setShowSudoPrompt] = useState<boolean>(false);
+  const [sudoPassword, setSudoPassword] = useState<string>('');
+  const [showSudoPasswordPlain, setShowSudoPasswordPlain] = useState<boolean>(false);
+  const sessionSudoPasswordRef = useRef<string>('');
 
   const getLanguage = (name: string): string => {
     const ext = name.split('.').pop()?.toLowerCase();
@@ -103,14 +109,19 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
 
   const editorRef = useRef<any>(null);
 
-  const handleSave = async (useSudo: boolean = false) => {
+  const handleSave = async (useSudo: boolean = false, customSudoPass?: string) => {
     // Read the most up-to-date value from the editor instance if available
     const activeVal = editorRef.current?.getValue?.() ?? content;
     setIsSaving(true);
     setSaveMessage(null);
     try {
       if (useSudo) {
-        await window.api.sftp.sudoWriteFile(sessionId, filePath, activeVal);
+        const passToUse = customSudoPass ?? sessionSudoPasswordRef.current;
+        await window.api.sftp.sudoWriteFile(sessionId, filePath, activeVal, passToUse);
+        if (customSudoPass) {
+          sessionSudoPasswordRef.current = customSudoPass;
+        }
+        setShowSudoPrompt(false);
       } else {
         await window.api.sftp.writeFile(sessionId, filePath, activeVal);
       }
@@ -118,13 +129,30 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
       setContent(activeVal);
       setIsDirty(false);
       onModifiedChange?.(false);
-      setSaveMessage({ text: t('editor.savedSuccess'), type: 'success' });
+      setSaveMessage({
+        text: useSudo ? `${t('editor.savedSuccess')} (Sudo)` : t('editor.savedSuccess'),
+        type: 'success',
+      });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
-      setSaveMessage({
-        text: `Save error: ${err.message}. If protected, try "Sudo Save".`,
-        type: 'error',
-      });
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('SUDO_PASSWORD_REQUIRED')) {
+        setShowSudoPrompt(true);
+        setSaveMessage({
+          text: t('editor.sudoPasswordPromptTitle') || 'Требуется пароль sudo',
+          type: 'error',
+        });
+      } else if (!useSudo && errMsg.includes('Permission denied')) {
+        setSaveMessage({
+          text: `${t('editor.permissionDenied') || 'Доступ запрещен'}. ${t('editor.trySudoSaveTip') || 'Нажмите "Sudo Сохранение"'}.`,
+          type: 'error',
+        });
+      } else {
+        setSaveMessage({
+          text: useSudo ? `Sudo Save error: ${errMsg}` : `Save error: ${errMsg}`,
+          type: 'error',
+        });
+      }
     } finally {
       setIsSaving(false);
     }
@@ -323,6 +351,88 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
           />
         )}
       </div>
+
+      {/* Sudo Password Prompt Modal */}
+      {showSudoPrompt && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 select-none animate-in fade-in duration-100">
+          <div
+            className={`border w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4 ${
+              isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#202020] border-[#383838] text-white'
+            }`}
+          >
+            <div className="flex items-center justify-between border-b pb-3 border-slate-500/20">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <h3 className="text-sm font-bold tracking-tight">
+                  {t('editor.sudoPasswordPromptTitle') || 'Требуется пароль sudo'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowSudoPrompt(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400">
+              {t('editor.sudoPasswordPromptDesc')?.replace('{file}', fileName) ||
+                `Для записи файла "${fileName}" требуются привилегии администратора. Введите пароль sudo:`}
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSave(true, sudoPassword);
+              }}
+              className="space-y-4"
+            >
+              <div className="relative">
+                <input
+                  type={showSudoPasswordPlain ? 'text' : 'password'}
+                  value={sudoPassword}
+                  onChange={(e) => setSudoPassword(e.target.value)}
+                  placeholder="Пароль sudo"
+                  autoFocus
+                  required
+                  className={`w-full px-3 py-2 text-xs rounded-xl border outline-none pr-10 font-mono transition-colors ${
+                    isLight
+                      ? 'bg-slate-50 border-slate-300 text-slate-900 focus:border-amber-500'
+                      : 'bg-[#181818] border-[#383838] text-white focus:border-amber-500'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSudoPasswordPlain(!showSudoPasswordPlain)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  {showSudoPasswordPlain ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSudoPrompt(false)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-500/20 hover:bg-white/5 text-xs text-slate-300 transition-colors cursor-pointer"
+                >
+                  {t('common.cancel') || 'Отмена'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving || !sudoPassword}
+                  className="flex items-center space-x-1.5 px-4 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs shadow-lg shadow-amber-600/20 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>{isSaving ? (t('editor.saving') || 'Сохранение...') : (t('editor.sudoSave') || 'Sudo Сохранение')}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

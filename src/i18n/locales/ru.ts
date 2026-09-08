@@ -280,7 +280,11 @@ export const ru: TranslationDictionary = {
     closeFile: 'Закрыть файл',
     unsaved: 'Несохраненные изменения',
     loading: 'Загрузка файла с удаленного сервера...',
-    saveElevatedTip: 'Сохранить с привилегиями sudo (sudo tee)',
+    saveElevatedTip: 'Сохранить с привилегиями sudo',
+    permissionDenied: 'Доступ запрещен (Permission denied)',
+    trySudoSaveTip: 'Нажмите кнопку "Sudo Сохранение"',
+    sudoPasswordPromptTitle: 'Требуется пароль sudo',
+    sudoPasswordPromptDesc: 'Для сохранения файла "{file}" требуются привилегии администратора. Введите пароль sudo:',
   },
   monitor: {
     title: 'Мониторинг ресурсов сервера',

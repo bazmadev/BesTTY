@@ -278,7 +278,11 @@ export const en = {
     closeFile: 'Close File',
     unsaved: 'Unsaved changes',
     loading: 'Loading file from remote server...',
-    saveElevatedTip: 'Save with elevated sudo privileges (sudo tee)',
+    saveElevatedTip: 'Save with elevated sudo privileges',
+    permissionDenied: 'Permission denied',
+    trySudoSaveTip: 'Try using the "Sudo Save" button',
+    sudoPasswordPromptTitle: 'Sudo Password Required',
+    sudoPasswordPromptDesc: 'Elevated root privileges are required to save "{file}". Please enter the sudo password:',
   },
   monitor: {
     title: 'Server Health & Resource Monitor',

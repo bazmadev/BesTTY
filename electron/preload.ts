@@ -75,8 +75,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('sftp:readFile', sessionId, remotePath),
     writeFile: (sessionId: string, remotePath: string, content: string) =>
       ipcRenderer.invoke('sftp:writeFile', sessionId, remotePath, content),
-    sudoWriteFile: (sessionId: string, remotePath: string, content: string) =>
-      ipcRenderer.invoke('sftp:sudoWriteFile', sessionId, remotePath, content),
+    sudoWriteFile: (sessionId: string, remotePath: string, content: string, sudoPassword?: string) =>
+      ipcRenderer.invoke('sftp:sudoWriteFile', sessionId, remotePath, content, sudoPassword),
     mkdir: (sessionId: string, remotePath: string) =>
       ipcRenderer.invoke('sftp:mkdir', sessionId, remotePath),
     delete: (sessionId: string, remotePath: string, isDirectory: boolean) =>

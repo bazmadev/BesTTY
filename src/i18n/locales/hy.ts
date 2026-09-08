@@ -276,7 +276,11 @@ export const hy: TranslationDictionary = {
     closeFile: 'Փակել ֆայլը',
     unsaved: 'Չպահպանված փոփոխություններ',
     loading: 'Ֆայլի բեռնում սերվերից...',
-    saveElevatedTip: 'Պահպանել sudo արտոնություններով (sudo tee)',
+    saveElevatedTip: 'Պահպանել sudo արտոնություններով',
+    permissionDenied: 'Մուտքն արգելված է (Permission denied)',
+    trySudoSaveTip: 'Սեղմեք "Sudo Save" կոճակը',
+    sudoPasswordPromptTitle: 'Պահանջվում է sudo գաղտնաբառ',
+    sudoPasswordPromptDesc: '"{file}" ֆայլը պահպանելու համար անհրաժեշտ են ադմինիստրատորի իրավունքներ: Մուտքագրեք sudo գաղտնաբառը:',
   },
   monitor: {
     title: 'Սերվերի ռեսուրսների մոնիտորինգ',

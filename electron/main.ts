@@ -217,8 +217,8 @@ function registerIpcHandlers() {
   ipcMain.handle('sftp:writeFile', async (_, sessionId, remotePath, content) => {
     return sftpManager.writeFile(sessionId, remotePath, content);
   });
-  ipcMain.handle('sftp:sudoWriteFile', async (_, sessionId, remotePath, content) => {
-    return sftpManager.sudoWriteFile(sessionId, remotePath, content);
+  ipcMain.handle('sftp:sudoWriteFile', async (_, sessionId, remotePath, content, sudoPassword) => {
+    return sftpManager.sudoWriteFile(sessionId, remotePath, content, sudoPassword);
   });
   ipcMain.handle('sftp:mkdir', async (_, sessionId, remotePath) => {
     return sftpManager.mkdir(sessionId, remotePath);

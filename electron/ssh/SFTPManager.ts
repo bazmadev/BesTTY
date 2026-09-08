@@ -87,10 +87,23 @@ export class SFTPManager {
   ): Promise<{ currentPath: string; files: SFTPFile[] }> {
     const sftp = await this.getSFTP(sessionId);
 
+    // Normalize tilde and relative paths
+    let pathToResolve = (!remotePath || remotePath === '~' || remotePath === '.') ? '.' : remotePath;
+
+    // Expand ~/ if path starts with ~/
+    if (pathToResolve.startsWith('~/')) {
+      const home = await new Promise<string>((res) => {
+        sftp.realpath('.', (err, resolved) => {
+          res(err ? '/root' : resolved);
+        });
+      });
+      pathToResolve = `${home.replace(/\/+$/, '')}/${pathToResolve.slice(2)}`;
+    }
+
     // Resolve realpath
     const realPath = await new Promise<string>((resolve) => {
-      sftp.realpath(remotePath, (err, resolved) => {
-        if (err) resolve(remotePath);
+      sftp.realpath(pathToResolve, (err, resolved) => {
+        if (err) resolve(pathToResolve);
         else resolve(resolved);
       });
     });
@@ -107,6 +120,10 @@ export class SFTPManager {
     return new Promise((resolve, reject) => {
       sftp.readdir(realPath, (err, list) => {
         if (err) {
+          // If directory listing fails because path does not exist, return empty list gracefully
+          if ((err as any).code === 2) {
+            return resolve({ currentPath: realPath, files: [] });
+          }
           return reject(err);
         }
 
@@ -196,7 +213,12 @@ export class SFTPManager {
     });
   }
 
-  public async sudoWriteFile(sessionId: string, remotePath: string, content: string): Promise<void> {
+  public async sudoWriteFile(
+    sessionId: string,
+    remotePath: string,
+    content: string,
+    sudoPassword?: string
+  ): Promise<void> {
     const session = this.sshManager.getSession(sessionId);
     if (!session || !session.client) {
       throw new Error(`SSH Session ${sessionId} not found`);
@@ -207,28 +229,87 @@ export class SFTPManager {
       throw new Error('Invalid path: contains illegal control characters');
     }
 
-    // POSIX shell-safe escaping: wrap in single quotes and escape embedded single quotes
-    const safePath = `'${remotePath.replace(/'/g, "'\\''")}'`;
+    // Step 1: Upload to a secure temporary file in /tmp via standard SFTP
+    // /tmp has 1777 permissions and is always writable by any remote user
+    const tempFileName = `.bestty_save_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const tempPath = `/tmp/${tempFileName}`;
 
-    return new Promise((resolve, reject) => {
-      // Use sudo tee with properly escaped path to safely write protected file
-      session.client.exec(`sudo tee -- ${safePath} > /dev/null`, (err, stream) => {
-        if (err) return reject(err);
+    await this.writeFile(sessionId, tempPath, content);
 
-        stream.on('close', (code: number) => {
-          if (code === 0) {
-            this.invalidateCacheForPath(sessionId, remotePath);
-            resolve();
-          } else {
-            reject(new Error(`sudo tee exited with code ${code}`));
+    // Step 2: Elevate via sudo to copy the temp file to destination
+    const safeTempPath = `'${tempPath.replace(/'/g, "'\\''")}'`;
+    const safeDestPath = `'${remotePath.replace(/'/g, "'\\''")}'`;
+
+    const passwordToTry = sudoPassword ?? (session.host && session.host.password) ?? '';
+
+    const runExec = (cmd: string, inputData?: string): Promise<{ code: number; stdout: string; stderr: string }> => {
+      return new Promise((resolve, reject) => {
+        session.client.exec(cmd, { pty: false }, (err, stream) => {
+          if (err) return reject(err);
+
+          let stdout = '';
+          let stderr = '';
+
+          stream.on('data', (d: Buffer) => {
+            stdout += d.toString();
+          });
+
+          stream.stderr.on('data', (d: Buffer) => {
+            stderr += d.toString();
+          });
+
+          stream.on('close', (code: number) => {
+            resolve({ code, stdout, stderr });
+          });
+
+          stream.on('error', (e: any) => {
+            reject(e);
+          });
+
+          if (inputData !== undefined) {
+            stream.write(inputData);
           }
+          stream.end();
         });
-        stream.on('error', (e: any) => reject(e));
-
-        stream.write(content);
-        stream.end();
       });
-    });
+    };
+
+    try {
+      let result: { code: number; stdout: string; stderr: string };
+
+      if (passwordToTry) {
+        // Use sudo -S to read password from stdin
+        const cmd = `sudo -S -p '' -- cp -f ${safeTempPath} ${safeDestPath} && rm -f ${safeTempPath}`;
+        result = await runExec(cmd, `${passwordToTry}\n`);
+      } else {
+        // Try passwordless sudo (-n)
+        const cmd = `sudo -n -- cp -f ${safeTempPath} ${safeDestPath} && rm -f ${safeTempPath}`;
+        result = await runExec(cmd);
+      }
+
+      if (result.code === 0) {
+        this.invalidateCacheForPath(sessionId, remotePath);
+        return;
+      }
+
+      const combinedErr = (result.stderr + '\n' + result.stdout).trim();
+
+      // Check if sudo failed because password or TTY was required
+      const isPasswordError =
+        /password/i.test(combinedErr) ||
+        /no tty/i.test(combinedErr) ||
+        /terminal is required/i.test(combinedErr) ||
+        /askpass/i.test(combinedErr);
+
+      if (isPasswordError) {
+        throw new Error(`SUDO_PASSWORD_REQUIRED: ${combinedErr || 'Password required for sudo elevation'}`);
+      }
+
+      throw new Error(`Sudo save failed (code ${result.code}): ${combinedErr}`);
+    } finally {
+      // Always cleanup temp file if it still exists
+      this.deleteFile(sessionId, tempPath, false).catch(() => {});
+    }
   }
 
   public async mkdir(sessionId: string, remotePath: string): Promise<void> {

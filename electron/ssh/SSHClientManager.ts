@@ -15,6 +15,7 @@ export interface SSHSessionInfo {
   currentDirectory: string;
   homeDirectory?: string;
   fingerprint?: string;
+  host?: HostProfile;
 }
 
 function extractDirectoryFromStream(str: string, homeDir?: string): string | null {
@@ -397,7 +398,7 @@ export class SSHClientManager extends EventEmitter {
             term: 'xterm-256color',
             cols: Math.max(cols, 20),
             rows: Math.max(rows, 10),
-            modes: DEFAULT_PTY_MODES,
+            modes: DEFAULT_PTY_MODES as any,
           },
           {
             env: {
@@ -428,6 +429,7 @@ export class SSHClientManager extends EventEmitter {
               currentDirectory: initialDir,
               homeDirectory: homeDir,
               fingerprint: detectedFingerprint || host.fingerprint,
+              host,
             };
 
             this.sessions.set(sessionId, sessionInfo);
