@@ -128,6 +128,26 @@ export const LEGACY_SSH_ALGORITHMS = {
 };
 export const SSH_ALGORITHMS = LEGACY_SSH_ALGORITHMS;
 
+/**
+ * RFC 4254 & RFC 8160 Terminal Modes buffer:
+ * Specifically includes opcode 42 (IUTF8 = 1), instructing the remote Linux kernel tty driver
+ * to treat input as UTF-8. Without IUTF8, pressing Backspace on a 2-byte UTF-8 character (like Cyrillic 'ф')
+ * only erases 1 byte, leaving corrupted characters/orphaned bytes in the tty line buffer.
+ */
+export const DEFAULT_PTY_MODES = Buffer.from([
+  42, 0, 0, 0, 1,   // IUTF8: 1 (RFC 8160: UTF-8 input mode)
+  3,  0, 0, 0, 127, // VERASE: 127 (0x7F / DEL, standard Unix backspace)
+  53, 0, 0, 0, 1,   // ECHO: 1
+  54, 0, 0, 0, 1,   // ECHOE: 1 (visual erase as BS-SP-BS)
+  61, 0, 0, 0, 1,   // ECHOKE: 1 (visual erase for line kill)
+  51, 0, 0, 0, 1,   // ICANON: 1 (canonical input processing)
+  50, 0, 0, 0, 1,   // ISIG: 1 (signals enabled)
+  36, 0, 0, 0, 1,   // ICRNL: 1 (map CR to NL on input)
+  38, 0, 0, 0, 1,   // IXON: 1
+  59, 0, 0, 0, 1,   // IEXTEN: 1
+  0                 // TTY_OP_END
+]);
+
 function getEffectiveUsername(username?: string): string {
   const trimmed = (username || 'root').trim();
   return trimmed.toLowerCase() === 'root' ? 'root' : trimmed;
@@ -371,12 +391,19 @@ export class SSHClientManager extends EventEmitter {
       const authPipeline = setupAuthPipeline(config, host, client);
 
       client.on('ready', () => {
-        // Open interactive PTY shell
+        // Open interactive PTY shell with proper UTF-8 line editing and backspacing
         client.shell(
           {
             term: 'xterm-256color',
             cols: Math.max(cols, 20),
             rows: Math.max(rows, 10),
+            modes: DEFAULT_PTY_MODES,
+          },
+          {
+            env: {
+              LANG: 'en_US.UTF-8',
+              LC_ALL: 'en_US.UTF-8',
+            },
           },
           (err, stream) => {
             if (err) {

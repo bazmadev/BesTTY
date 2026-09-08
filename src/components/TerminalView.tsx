@@ -492,10 +492,13 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
         }
       }
 
-      // Paste: Ctrl+V, Ctrl+Shift+V, Shift+Insert
+      const isKeyV = event.key === 'v' || event.key === 'V' || event.code === 'KeyV';
+      const isKeyC = event.key === 'c' || event.key === 'C' || event.code === 'KeyC';
+      const isKeyA = event.key === 'a' || event.key === 'A' || event.code === 'KeyA';
+
+      // Paste: Ctrl+V, Ctrl+Shift+V, Shift+Insert (works across all keyboard layouts)
       if (
-        (event.ctrlKey && (event.key === 'v' || event.key === 'V')) ||
-        (event.ctrlKey && event.shiftKey && (event.key === 'v' || event.key === 'V')) ||
+        (event.ctrlKey && isKeyV) ||
         (event.shiftKey && event.key === 'Insert')
       ) {
         if (event.type === 'keydown') {
@@ -504,10 +507,10 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
         return false;
       }
 
-      // Copy: Ctrl+C (when selection exists), Ctrl+Shift+C, Ctrl+Insert
+      // Copy: Ctrl+C (when selection exists), Ctrl+Shift+C, Ctrl+Insert (works across all keyboard layouts)
       if (
-        (event.ctrlKey && !event.shiftKey && (event.key === 'c' || event.key === 'C') && term.hasSelection()) ||
-        (event.ctrlKey && event.shiftKey && (event.key === 'c' || event.key === 'C')) ||
+        (event.ctrlKey && !event.shiftKey && isKeyC && term.hasSelection()) ||
+        (event.ctrlKey && event.shiftKey && isKeyC) ||
         (event.ctrlKey && event.key === 'Insert')
       ) {
         if (event.type === 'keydown') {
@@ -520,8 +523,8 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
         return false;
       }
 
-      // Select All: Ctrl+Shift+A
-      if (event.ctrlKey && event.shiftKey && (event.key === 'a' || event.key === 'A')) {
+      // Select All: Ctrl+Shift+A (works across all keyboard layouts)
+      if (event.ctrlKey && event.shiftKey && isKeyA) {
         if (event.type === 'keydown') {
           term.selectAll();
         }
