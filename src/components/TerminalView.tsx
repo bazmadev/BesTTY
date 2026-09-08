@@ -682,14 +682,21 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     const tokens = raw.trimStart().split(/\s+/);
     const currentToken = tokens[tokens.length - 1] || '';
 
-    // Send backspaces to delete currently typed incomplete token
-    if (currentToken.length > 0) {
-      const backspaces = '\b \b'.repeat(currentToken.length);
-      window.api?.ssh.write(sessionId, backspaces);
+    if (currentToken.length > 0 && item.insertText.startsWith(currentToken)) {
+      // Suffix completion: write only the remaining characters (zero backspaces, no control characters)
+      const suffix = item.insertText.slice(currentToken.length);
+      if (suffix) {
+        window.api?.ssh.write(sessionId, suffix);
+      }
+    } else {
+      // In case of case mismatch or snippet replacement, send standard Unix DEL (\x7f)
+      // Never send '\b \b' which injects space characters into stdin!
+      if (currentToken.length > 0) {
+        const backspaces = '\x7f'.repeat(currentToken.length);
+        window.api?.ssh.write(sessionId, backspaces);
+      }
+      window.api?.ssh.write(sessionId, item.insertText);
     }
-
-    // Write full completion
-    window.api?.ssh.write(sessionId, item.insertText);
 
     // Update internal buffer
     const prefix = raw.slice(0, raw.length - currentToken.length);
