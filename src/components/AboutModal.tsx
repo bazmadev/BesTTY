@@ -147,7 +147,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                   </button>
                 )}
               </div>
-              <p className="text-xs text-slate-400 mt-1 max-w-md">
+              <p className={`text-xs mt-1 max-w-md ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                 {t('about.subtitle')}
               </p>
             </div>
@@ -156,7 +156,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
           <button
             onClick={onClose}
             className={`p-1.5 rounded-lg transition-colors relative z-10 ${
-              isLight ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/10'
+              isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/10'
             }`}
           >
             <X className="w-5 h-5" />
@@ -172,7 +172,9 @@ export const AboutModal: React.FC<AboutModalProps> = ({
             className={`pb-2.5 text-xs font-semibold flex items-center space-x-1.5 border-b-2 transition-all ${
               activeTab === 'mission'
                 ? 'border-sky-500 text-sky-500'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                : isLight
+                  ? 'border-transparent text-slate-600 hover:text-slate-900'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <Sparkles className="w-3.5 h-3.5" />
@@ -184,7 +186,9 @@ export const AboutModal: React.FC<AboutModalProps> = ({
             className={`pb-2.5 text-xs font-semibold flex items-center space-x-1.5 border-b-2 transition-all relative ${
               activeTab === 'updates'
                 ? 'border-sky-500 text-sky-500'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                : isLight
+                  ? 'border-transparent text-slate-600 hover:text-slate-900'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <Download className="w-3.5 h-3.5" />
@@ -199,7 +203,9 @@ export const AboutModal: React.FC<AboutModalProps> = ({
             className={`pb-2.5 text-xs font-semibold flex items-center space-x-1.5 border-b-2 transition-all ${
               activeTab === 'donate'
                 ? 'border-rose-500 text-rose-500'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
+                : isLight
+                  ? 'border-transparent text-slate-600 hover:text-slate-900'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
@@ -226,7 +232,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
 
               {/* Solved Problems Grid */}
               <div className="space-y-3">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                <h4 className={`text-xs font-bold uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {t('about.tasksTitle')}
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -242,7 +248,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                       </div>
                       <div className="space-y-0.5">
                         <div className="text-xs font-semibold text-sky-500 dark:text-sky-400">{task.title}</div>
-                        <div className="text-[11px] text-slate-400 leading-snug">{task.desc}</div>
+                        <div className={`text-[11px] leading-snug ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{task.desc}</div>
                       </div>
                     </div>
                   ))}
@@ -265,7 +271,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                           {t('about.authorRole')}
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
+                      <p className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                         {t('about.authorTelegramDesc')}
                       </p>
                     </div>
@@ -283,7 +289,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                   </a>
                 </div>
 
-                <p className="text-xs leading-relaxed text-slate-300">
+                <p className={`text-xs leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
                   {t('about.authorBio')}
                 </p>
 
@@ -346,11 +352,11 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                     </div>
                     <div>
                       <h4 className="text-sm font-bold">{t('updater.title')}</h4>
-                      <p className="text-xs text-slate-400 mt-0.5">{t('updater.desc')}</p>
+                      <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{t('updater.desc')}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-[11px] text-slate-400 block">{t('updater.currentVersion')}</span>
+                    <span className={`text-[11px] block ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{t('updater.currentVersion')}</span>
                     <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/20">
                       v{updateState.currentVersion}
                     </span>
@@ -481,7 +487,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                   <span>{updateState.status === 'checking' ? t('updater.checking') : t('updater.checkNow')}</span>
                 </button>
 
-                <span className="text-[11px] text-slate-400 font-mono">
+                <span className={`text-[11px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   GitHub Releases • OTA Stream
                 </span>
               </div>
@@ -498,7 +504,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                   <Heart className="w-6 h-6 fill-rose-500" />
                 </div>
                 <h3 className="text-sm font-bold">{t('about.donateTitle')}</h3>
-                <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed">
+                <p className={`text-xs max-w-lg mx-auto leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {t('about.donateSubtitle')}
                 </p>
               </div>
@@ -520,7 +526,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                           @bazmadev
                         </span>
                       </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
+                      <div className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                         {t('about.authorTelegramDesc')}
                       </div>
                     </div>
@@ -549,7 +555,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-emerald-400">{t('about.tipsTitle')}</h4>
-                        <p className="text-xs text-slate-400 mt-0.5">{t('about.tipsDesc')}</p>
+                        <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{t('about.tipsDesc')}</p>
                       </div>
                     </div>
                   </div>
@@ -591,7 +597,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                           className="w-48 h-48 rounded-full object-contain drop-shadow-md"
                         />
                       </div>
-                      <span className="text-[11px] text-slate-400 mt-2 text-center">
+                      <span className={`text-[11px] mt-2 text-center ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                         {t('about.scanQrTip')}
                       </span>
                     </div>
@@ -609,7 +615,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-orange-400">{t('about.boostyTitle')}</h4>
-                        <p className="text-xs text-slate-400 mt-0.5">{t('about.boostyDesc')}</p>
+                        <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{t('about.boostyDesc')}</p>
                       </div>
                     </div>
                   </div>
@@ -664,7 +670,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                           className="w-40 h-40 object-contain"
                         />
                       </div>
-                      <span className="text-[11px] text-slate-400 mt-2 text-center">
+                      <span className={`text-[11px] mt-2 text-center ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                         {t('about.scanQrTip')}
                       </span>
                     </div>
@@ -682,7 +688,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-purple-400">{t('about.yoomoneyTitle')}</h4>
-                        <p className="text-xs text-slate-400 mt-0.5">{t('about.yoomoneyDesc')}</p>
+                        <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{t('about.yoomoneyDesc')}</p>
                       </div>
                     </div>
                   </div>
@@ -724,7 +730,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
                           className="w-40 h-40 object-contain"
                         />
                       </div>
-                      <span className="text-[11px] text-slate-400 mt-2 text-center">
+                      <span className={`text-[11px] mt-2 text-center ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                         {t('about.scanQrTip')}
                       </span>
                     </div>
@@ -733,7 +739,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
               </div>
 
               {/* Thank You Note */}
-              <div className="text-center text-xs text-slate-400 font-medium pt-2">
+              <div className={`text-center text-xs font-medium pt-2 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                 {t('about.thankYou')}
               </div>
             </div>
@@ -741,8 +747,8 @@ export const AboutModal: React.FC<AboutModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className={`px-6 py-3 border-t flex items-center justify-between text-xs text-slate-400 ${
-          isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#222222] border-[#2e2e2e]'
+        <div className={`px-6 py-3 border-t flex items-center justify-between text-xs ${
+          isLight ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-[#222222] border-[#2e2e2e] text-slate-400'
         }`}>
           <span className="font-mono text-[11px]">BesTTY &copy; 2026 • Windows 11 Fluent App</span>
           <button

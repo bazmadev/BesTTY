@@ -72,7 +72,9 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
           {showSftpSidebar ? (
             <button
               onClick={onSwapPanels}
-              className="p-1 rounded hover:bg-white/10 text-amber-400 hover:text-amber-300 flex-shrink-0"
+              className={`p-1 rounded flex-shrink-0 ${
+                isLight ? 'text-amber-600 hover:text-amber-800 hover:bg-slate-200' : 'text-amber-400 hover:text-amber-300 hover:bg-white/10'
+              }`}
               title={t('terminal.swapPanels')}
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />
@@ -80,7 +82,9 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
           ) : (
             <button
               onClick={onTogglePosition}
-              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white flex-shrink-0"
+              className={`p-1 rounded flex-shrink-0 ${
+                isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
               title={position === 'left' ? t('terminal.dockRight') : t('terminal.dockLeft')}
             >
               {position === 'left' ? <PanelRight className="w-3.5 h-3.5" /> : <PanelLeft className="w-3.5 h-3.5" />}
@@ -89,7 +93,9 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
 
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white flex-shrink-0"
+            className={`p-1 rounded flex-shrink-0 ${
+              isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/10'
+            }`}
             title={t('terminal.closeSidebar')}
           >
             <X className="w-3.5 h-3.5" />
@@ -100,7 +106,7 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
       {/* Mini-Monitor Body */}
       <div className="flex-1 overflow-y-auto p-2 space-y-3 text-xs">
         {!metrics ? (
-          <div className="p-4 text-center text-slate-500 flex flex-col items-center space-y-2">
+          <div className={`p-4 text-center flex flex-col items-center space-y-2 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
             <Activity className="w-5 h-5 animate-pulse text-purple-400" />
             <span className="text-[11px]">{t('monitor.gathering')}</span>
           </div>
@@ -111,7 +117,7 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
               isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
             }`}>
               <div className="flex items-center justify-between text-[11px] mb-1">
-                <span className="text-slate-400 flex items-center space-x-1">
+                <span className={`flex items-center space-x-1 ${isLight ? 'text-slate-700 font-medium' : 'text-slate-400'}`}>
                   <Cpu className="w-3 h-3 text-sky-400" />
                   <span>CPU Usage</span>
                 </span>
@@ -119,7 +125,7 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
                   {metrics.cpuUsage.toFixed(1)}%
                 </span>
               </div>
-              <div className="w-full h-1.5 bg-slate-700/30 rounded-full overflow-hidden">
+              <div className={`w-full h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-slate-200' : 'bg-slate-700/30'}`}>
                 <div
                   className={`h-full transition-all duration-500 rounded-full ${
                     metrics.cpuUsage > 85
@@ -131,7 +137,7 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
                   style={{ width: `${Math.min(100, Math.max(0, metrics.cpuUsage))}%` }}
                 />
               </div>
-              <div className="mt-1 text-[10px] text-slate-500 font-mono">
+              <div className={`mt-1 text-[10px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
                 Load: {metrics.loadAvg.join(' ')}
               </div>
             </div>
@@ -141,7 +147,7 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
               isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
             }`}>
               <div className="flex items-center justify-between text-[11px] mb-1">
-                <span className="text-slate-400 flex items-center space-x-1">
+                <span className={`flex items-center space-x-1 ${isLight ? 'text-slate-700 font-medium' : 'text-slate-400'}`}>
                   <Layers className="w-3 h-3 text-emerald-400" />
                   <span>RAM Memory</span>
                 </span>
@@ -149,7 +155,7 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
                   {metrics.memoryPercent}%
                 </span>
               </div>
-              <div className="w-full h-1.5 bg-slate-700/30 rounded-full overflow-hidden">
+              <div className={`w-full h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-slate-200' : 'bg-slate-700/30'}`}>
                 <div
                   className={`h-full transition-all duration-500 rounded-full ${
                     metrics.memoryPercent > 85
@@ -161,7 +167,7 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
                   style={{ width: `${Math.min(100, Math.max(0, metrics.memoryPercent))}%` }}
                 />
               </div>
-              <div className="mt-1 flex justify-between text-[10px] text-slate-500 font-mono">
+              <div className={`mt-1 flex justify-between text-[10px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
                 <span>{(metrics.memoryUsed / 1024).toFixed(1)} GB used</span>
                 <span>{(metrics.memoryTotal / 1024).toFixed(1)} GB total</span>
               </div>
@@ -172,18 +178,18 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
               <div className={`p-2 rounded-lg border ${
                 isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
               }`}>
-                <div className="text-[11px] text-slate-400 flex items-center space-x-1 mb-1.5">
+                <div className={`text-[11px] flex items-center space-x-1 mb-1.5 ${isLight ? 'text-slate-700 font-medium' : 'text-slate-400'}`}>
                   <HardDrive className="w-3 h-3 text-amber-400" />
                   <span>Disks</span>
                 </div>
                 <div className="space-y-1.5">
                   {metrics.disks.slice(0, 3).map((d, i) => (
                     <div key={i} className="text-[10px]">
-                      <div className="flex justify-between text-slate-400 font-mono">
+                      <div className={`flex justify-between font-mono ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
                         <span className="truncate max-w-[120px]">{d.mount}</span>
                         <span className="font-semibold">{d.percent}%</span>
                       </div>
-                      <div className="w-full h-1 bg-slate-700/30 rounded-full overflow-hidden mt-0.5">
+                      <div className={`w-full h-1 rounded-full overflow-hidden mt-0.5 ${isLight ? 'bg-slate-200' : 'bg-slate-700/30'}`}>
                         <div
                           className="h-full bg-amber-500 rounded-full"
                           style={{ width: `${Math.min(100, d.percent)}%` }}
@@ -199,25 +205,27 @@ export const TerminalMiniMonitor: React.FC<TerminalMiniMonitorProps> = React.mem
             <div className={`p-2 rounded-lg border flex-1 ${
               isLight ? 'bg-white border-slate-200' : 'bg-[#222222] border-[#2f2f2f]'
             }`}>
-              <div className="text-[11px] text-slate-400 flex items-center justify-between mb-1.5">
+              <div className={`text-[11px] flex items-center justify-between mb-1.5 ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
                 <span className="font-semibold">Top Processes</span>
-                <span className="text-[9px] text-slate-500">CPU / MEM</span>
+                <span className={`text-[9px] ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>CPU / MEM</span>
               </div>
-              <div className="divide-y divide-slate-700/20 font-mono text-[10px]">
+              <div className={`divide-y font-mono text-[10px] ${isLight ? 'divide-slate-200' : 'divide-slate-700/20'}`}>
                 {processes.slice(0, 5).map((proc) => (
                   <div key={proc.pid} className="py-1 flex items-center justify-between group">
                     <div className="truncate flex-1 mr-1">
-                      <div className="font-medium text-slate-300 truncate" title={proc.command}>
+                      <div className={`font-medium truncate ${isLight ? 'text-slate-900 font-semibold' : 'text-slate-300'}`} title={proc.command}>
                         {proc.command.split(' ')[0]}
                       </div>
-                      <div className="text-slate-500 text-[9px]">PID: {proc.pid} ({proc.user})</div>
+                      <div className={`text-[9px] ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>PID: {proc.pid} ({proc.user})</div>
                     </div>
                     <div className="flex items-center space-x-1.5">
                       <span className="text-sky-400 font-semibold">{proc.cpu.toFixed(0)}%</span>
-                      <span className="text-slate-400">{proc.mem.toFixed(0)}%</span>
+                      <span className={isLight ? 'text-slate-600' : 'text-slate-400'}>{proc.mem.toFixed(0)}%</span>
                       <button
                         onClick={() => handleKillProcess(proc.pid)}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-rose-500/20 text-rose-400 rounded"
+                        className={`opacity-0 group-hover:opacity-100 p-0.5 rounded ${
+                          isLight ? 'text-rose-600 hover:bg-rose-100' : 'text-rose-400 hover:bg-rose-500/20'
+                        }`}
                         title="SIGTERM process"
                       >
                         <Trash2 className="w-2.5 h-2.5" />

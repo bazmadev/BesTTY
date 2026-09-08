@@ -98,7 +98,7 @@ export const HostList: React.FC<HostListProps> = ({
               <Server className="w-6 h-6 text-sky-500" />
               <span>{t('hosts.title')}</span>
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               {t('hosts.subtitle')}
             </p>
           </div>
@@ -169,7 +169,7 @@ export const HostList: React.FC<HostListProps> = ({
 
           {/* Search filter */}
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <Search className={`w-4 h-4 absolute left-3 top-2.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`} />
             <input
               type="text"
               placeholder={t('hosts.searchPlaceholder')}
@@ -193,7 +193,7 @@ export const HostList: React.FC<HostListProps> = ({
               <Lock className="w-6 h-6 text-amber-500" />
             </div>
             <h3 className="text-sm font-semibold">{t('hosts.vaultLockedTitle')}</h3>
-            <p className="text-xs text-slate-400 max-w-md mt-1 mb-4">
+            <p className={`text-xs max-w-md mt-1 mb-4 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               {t('hosts.vaultLockedDesc')}
             </p>
             <button
@@ -208,9 +208,9 @@ export const HostList: React.FC<HostListProps> = ({
           <div className={`flex flex-col items-center justify-center h-64 border-2 border-dashed rounded-2xl p-8 text-center ${
             isLight ? 'border-slate-300 bg-white/50' : 'border-[#2d2d2d]'
           }`}>
-            <Server className="w-12 h-12 text-slate-400 mb-3" />
+            <Server className={`w-12 h-12 mb-3 ${isLight ? 'text-slate-500' : 'text-slate-400'}`} />
             <h3 className="text-sm font-semibold">{t('hosts.emptyTitle')}</h3>
-            <p className="text-xs text-slate-500 max-w-md mt-1 mb-4">
+            <p className={`text-xs max-w-md mt-1 mb-4 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
               {t('hosts.emptyDesc')}
             </p>
             <button
@@ -222,16 +222,18 @@ export const HostList: React.FC<HostListProps> = ({
             </button>
           </div>
         ) : Object.keys(groupedHosts).length === 0 ? (
-          <div className="text-center py-12 text-slate-500 text-xs">
+          <div className={`text-center py-12 text-xs ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
             {t('hosts.noResults')} "{search}"
           </div>
         ) : (
           Object.entries(groupedHosts).map(([groupName, groupHosts]) => (
             <div key={groupName} className="space-y-3">
-              <div className="flex items-center space-x-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <div className={`flex items-center space-x-2 text-xs font-semibold uppercase tracking-wider ${
+                isLight ? 'text-slate-600' : 'text-slate-400'
+              }`}>
                 <span>{groupName}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                  isLight ? 'bg-slate-200 text-slate-600' : 'bg-[#272727] text-slate-400'
+                  isLight ? 'bg-slate-200 text-slate-700 font-medium' : 'bg-[#272727] text-slate-400'
                 }`}>
                   {groupHosts.length}
                 </span>
@@ -268,7 +270,7 @@ export const HostList: React.FC<HostListProps> = ({
                             </span>
                           ) : (
                             <span className={`flex items-center space-x-1 text-[10px] font-mono px-2 py-0.5 rounded border ${
-                              isLight ? 'bg-slate-100 text-slate-600 border-slate-300' : 'bg-[#181818] text-slate-400 border-[#333]'
+                              isLight ? 'bg-slate-100 text-slate-700 font-medium border-slate-300' : 'bg-[#181818] text-slate-400 border-[#333]'
                             }`}>
                               {host.authType === 'password' && <Lock className="w-3 h-3 text-amber-500" />}
                               {host.authType === 'privateKey' && <Key className="w-3 h-3 text-emerald-500" />}
@@ -278,7 +280,7 @@ export const HostList: React.FC<HostListProps> = ({
                           )}
                         </div>
 
-                        <div className="font-mono text-xs text-slate-400 mb-4 truncate">
+                        <div className={`font-mono text-xs mb-4 truncate ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                           {host.username}@{host.host}:{host.port}
                         </div>
                       </div>
@@ -292,7 +294,9 @@ export const HostList: React.FC<HostListProps> = ({
                             className={`p-1.5 rounded-md transition-colors disabled:opacity-40 ${
                               isConnecting && connectingInfo?.type === 'terminal'
                                 ? 'bg-sky-500/20 text-sky-400 ring-1 ring-sky-500'
-                                : 'hover:bg-sky-500/20 text-slate-400 hover:text-sky-500'
+                                : isLight
+                                  ? 'text-slate-600 hover:text-sky-600 hover:bg-sky-50'
+                                  : 'hover:bg-sky-500/20 text-slate-400 hover:text-sky-500'
                             }`}
                             title={t('hosts.openTerminal')}
                           >
@@ -308,7 +312,9 @@ export const HostList: React.FC<HostListProps> = ({
                             className={`p-1.5 rounded-md transition-colors disabled:opacity-40 ${
                               isConnecting && connectingInfo?.type === 'sftp'
                                 ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500'
-                                : 'hover:bg-amber-500/20 text-slate-400 hover:text-amber-500'
+                                : isLight
+                                  ? 'text-slate-600 hover:text-amber-600 hover:bg-amber-50'
+                                  : 'hover:bg-amber-500/20 text-slate-400 hover:text-amber-500'
                             }`}
                             title={t('hosts.openSftp')}
                           >
@@ -324,7 +330,9 @@ export const HostList: React.FC<HostListProps> = ({
                             className={`p-1.5 rounded-md transition-colors disabled:opacity-40 ${
                               isConnecting && connectingInfo?.type === 'monitor'
                                 ? 'bg-purple-500/20 text-purple-400 ring-1 ring-purple-500'
-                                : 'hover:bg-purple-500/20 text-slate-400 hover:text-purple-500'
+                                : isLight
+                                  ? 'text-slate-600 hover:text-purple-600 hover:bg-purple-50'
+                                  : 'hover:bg-purple-500/20 text-slate-400 hover:text-purple-500'
                             }`}
                             title={t('hosts.openMonitor')}
                           >
@@ -340,7 +348,11 @@ export const HostList: React.FC<HostListProps> = ({
                           <button
                             onClick={() => onEdit(host)}
                             disabled={Boolean(connectingInfo)}
-                            className="p-1.5 rounded-md hover:bg-slate-500/10 text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-40"
+                            className={`p-1.5 rounded-md transition-colors disabled:opacity-40 ${
+                              isLight
+                                ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                                : 'hover:bg-slate-500/10 text-slate-400 hover:text-slate-200'
+                            }`}
                             title={t('hosts.editHost')}
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -348,7 +360,11 @@ export const HostList: React.FC<HostListProps> = ({
                           <button
                             onClick={() => onDelete(host.id)}
                             disabled={Boolean(connectingInfo)}
-                            className="p-1.5 rounded-md hover:bg-red-500/20 text-slate-400 hover:text-red-500 transition-colors disabled:opacity-40"
+                            className={`p-1.5 rounded-md transition-colors disabled:opacity-40 ${
+                              isLight
+                                ? 'text-slate-600 hover:text-red-600 hover:bg-red-50'
+                                : 'hover:bg-red-500/20 text-slate-400 hover:text-red-500'
+                            }`}
                             title={t('hosts.deleteHost')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -365,7 +381,7 @@ export const HostList: React.FC<HostListProps> = ({
                   onClick={handleNewHostClick}
                   className={`border-2 border-dashed rounded-xl p-5 transition-all flex flex-col items-center justify-center space-y-2 min-h-[140px] group cursor-pointer ${
                     isLight
-                      ? 'border-slate-300 hover:border-sky-500 bg-white/60 hover:bg-sky-50/50 text-slate-500 hover:text-sky-600 shadow-sm'
+                      ? 'border-slate-300 hover:border-sky-500 bg-white/60 hover:bg-sky-50/50 text-slate-600 hover:text-sky-600 shadow-sm'
                       : 'border-[#333] hover:border-sky-500/60 bg-[#1e1e1e]/40 hover:bg-sky-500/5 text-slate-400 hover:text-sky-400'
                   }`}
                 >

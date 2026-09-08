@@ -119,12 +119,14 @@ export const ConnectHostModal: React.FC<ConnectHostModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-semibold tracking-tight">{header.title}</h2>
-              <p className="text-xs text-slate-400 mt-0.5">{t('sidebar.selectHost')}</p>
+              <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{t('sidebar.selectHost')}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 transition-colors"
+            className={`p-1.5 rounded-lg transition-colors ${
+              isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30'
+            }`}
           >
             <X className="w-5 h-5" />
           </button>
@@ -134,12 +136,12 @@ export const ConnectHostModal: React.FC<ConnectHostModalProps> = ({
         <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1">
           {/* Quick Connect Bar */}
           <form onSubmit={handleQuickSubmit} className="space-y-1.5">
-            <div className="text-xs font-semibold text-slate-400 flex items-center justify-between">
+            <div className={`text-xs font-semibold flex items-center justify-between ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
               <span className="flex items-center space-x-1.5">
                 <Zap className="w-3.5 h-3.5 text-amber-400" />
                 <span>{t('sidebar.quickConnect')}</span>
               </span>
-              <span className="text-[11px] font-normal text-slate-500">ssh user@host[:port]</span>
+              <span className={`text-[11px] font-normal ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>ssh user@host[:port]</span>
             </div>
             <div className="flex items-center space-x-2">
               <div className="relative flex-1">
@@ -171,14 +173,14 @@ export const ConnectHostModal: React.FC<ConnectHostModalProps> = ({
           {/* Search Saved Hosts */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-400">{t('nav.hosts')}</span>
-              <span className="text-xs text-slate-500 font-mono">
+              <span className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('nav.hosts')}</span>
+              <span className={`text-xs font-mono ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
                 {filteredHosts.length} / {hosts.length}
               </span>
             </div>
 
             <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+              <Search className={`w-4 h-4 absolute left-3 top-2.5 pointer-events-none ${isLight ? 'text-slate-500' : 'text-slate-400'}`} />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -196,7 +198,7 @@ export const ConnectHostModal: React.FC<ConnectHostModalProps> = ({
             {/* Hosts List */}
             <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar pt-1">
               {filteredHosts.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-xs">
+                <div className={`py-8 text-center text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {search ? t('hosts.noResults') : t('sidebar.noSavedHosts')}
                 </div>
               ) : (
@@ -225,10 +227,12 @@ export const ConnectHostModal: React.FC<ConnectHostModalProps> = ({
                         <Server className="w-4 h-4" />
                       </div>
                       <div className="truncate">
-                        <div className="text-xs font-semibold group-hover:text-sky-400 transition-colors truncate">
+                        <div className={`text-xs font-semibold transition-colors truncate ${
+                          isLight ? 'text-slate-900 group-hover:text-sky-600' : 'text-slate-100 group-hover:text-sky-400'
+                        }`}>
                           {h.name || h.host}
                         </div>
-                        <div className="text-[11px] text-slate-400 font-mono truncate">
+                        <div className={`text-[11px] font-mono truncate ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                           {h.username}@{h.host}:{h.port || 22}
                         </div>
                       </div>
@@ -236,7 +240,9 @@ export const ConnectHostModal: React.FC<ConnectHostModalProps> = ({
 
                     <div className="flex items-center space-x-2">
                       {h.group && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20 font-sans">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-sans border ${
+                          isLight ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                        }`}>
                           {h.group}
                         </span>
                       )}
@@ -273,7 +279,9 @@ export const ConnectHostModal: React.FC<ConnectHostModalProps> = ({
 
           <button
             onClick={onClose}
-            className="px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 transition-colors"
+            className={`px-3.5 py-1.5 rounded-lg transition-colors ${
+              isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30'
+            }`}
           >
             {t('modal.cancel')}
           </button>

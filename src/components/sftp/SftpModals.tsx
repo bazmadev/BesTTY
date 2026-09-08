@@ -25,7 +25,7 @@ export const NewFolderPrompt: React.FC<NewFolderPromptProps> = ({
         isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#242424] border-[#333]'
       }`}
     >
-      <span className="text-xs text-slate-400 font-medium">{t('sftp.folderName')}</span>
+      <span className={`text-xs font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('sftp.folderName')}</span>
       <form onSubmit={onSubmit} className="flex items-center space-x-2 flex-1">
         <input
           type="text"
@@ -46,7 +46,9 @@ export const NewFolderPrompt: React.FC<NewFolderPromptProps> = ({
         <button
           type="button"
           onClick={onCancel}
-          className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1 transition-colors"
+          className={`text-xs px-2 py-1 rounded transition-colors ${
+            isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-slate-200'
+          }`}
         >
           {t('sftp.cancel')}
         </button>
@@ -78,7 +80,7 @@ export const NewFilePrompt: React.FC<NewFilePromptProps> = ({
         isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#242424] border-[#333]'
       }`}
     >
-      <span className="text-xs text-slate-400 font-medium">
+      <span className={`text-xs font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
         {t('sftp.createFile') || 'Имя файла'}
       </span>
       <form onSubmit={onSubmit} className="flex items-center space-x-2 flex-1">
@@ -101,7 +103,9 @@ export const NewFilePrompt: React.FC<NewFilePromptProps> = ({
         <button
           type="button"
           onClick={onCancel}
-          className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1 transition-colors"
+          className={`text-xs px-2 py-1 rounded transition-colors ${
+            isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-slate-200'
+          }`}
         >
           {t('sftp.cancel')}
         </button>
@@ -135,7 +139,7 @@ export const RenamePrompt: React.FC<RenamePromptProps> = ({
         isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#242424] border-[#333]'
       }`}
     >
-      <span className="text-xs text-slate-400 font-medium truncate max-w-xs">
+      <span className={`text-xs font-medium truncate max-w-xs ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
         {t('sftp.renamePrompt').replace('{name}', target.name)}
       </span>
       <form onSubmit={onSubmit} className="flex items-center space-x-2 flex-1">
@@ -157,7 +161,9 @@ export const RenamePrompt: React.FC<RenamePromptProps> = ({
         <button
           type="button"
           onClick={onCancel}
-          className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1 transition-colors"
+          className={`text-xs px-2 py-1 rounded transition-colors ${
+            isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-slate-200'
+          }`}
         >
           {t('sftp.cancel')}
         </button>

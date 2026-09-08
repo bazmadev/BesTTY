@@ -244,7 +244,7 @@ export const TitleBar: React.FC<TitleBarProps> = React.memo(({
               className={`px-1.5 py-1 rounded flex items-center justify-center transition-all ${
                 splitMode === 'single'
                   ? isLight ? 'bg-white text-sky-600 shadow-sm' : 'bg-[#333] text-sky-400 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
+                  : isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50' : 'text-slate-400 hover:text-slate-200'
               }`}
               title={t('split.single')}
             >
@@ -255,7 +255,7 @@ export const TitleBar: React.FC<TitleBarProps> = React.memo(({
               className={`px-1.5 py-1 rounded flex items-center justify-center transition-all ${
                 splitMode === 'split-2'
                   ? isLight ? 'bg-white text-sky-600 shadow-sm' : 'bg-[#333] text-sky-400 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
+                  : isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50' : 'text-slate-400 hover:text-slate-200'
               }`}
               title={t('split.split2')}
             >
@@ -266,7 +266,7 @@ export const TitleBar: React.FC<TitleBarProps> = React.memo(({
               className={`px-1.5 py-1 rounded flex items-center justify-center transition-all ${
                 splitMode === 'split-3'
                   ? isLight ? 'bg-white text-sky-600 shadow-sm' : 'bg-[#333] text-sky-400 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
+                  : isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50' : 'text-slate-400 hover:text-slate-200'
               }`}
               title={t('split.split3')}
             >
@@ -321,7 +321,7 @@ export const TitleBar: React.FC<TitleBarProps> = React.memo(({
           <button
             onClick={onToggleTheme}
             className={`w-9 h-10 flex items-center justify-center transition-colors ${
-              isLight ? 'text-slate-500 hover:text-amber-500 hover:bg-slate-200' : 'text-slate-400 hover:text-amber-400 hover:bg-white/10'
+              isLight ? 'text-slate-600 hover:text-amber-600 hover:bg-slate-200' : 'text-slate-400 hover:text-amber-400 hover:bg-white/10'
             }`}
             title={t('titlebar.themeToggle')}
           >
@@ -345,7 +345,7 @@ export const TitleBar: React.FC<TitleBarProps> = React.memo(({
           <button
             onClick={onOpenHelp}
             className={`w-9 h-10 flex items-center justify-center transition-colors ${
-              isLight ? 'text-slate-500 hover:text-sky-600 hover:bg-slate-200' : 'text-slate-400 hover:text-sky-400 hover:bg-white/10'
+              isLight ? 'text-slate-600 hover:text-sky-600 hover:bg-slate-200' : 'text-slate-400 hover:text-sky-400 hover:bg-white/10'
             }`}
             title={t('help.title')}
           >

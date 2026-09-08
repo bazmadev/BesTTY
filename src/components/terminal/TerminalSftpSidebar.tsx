@@ -460,7 +460,9 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
         isLight ? 'bg-[#ececec] border-[#e0e0e0]' : 'bg-[#222222] border-[#2c2c2c]'
       }`}>
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-1.5 min-w-0 flex-1 truncate mr-1">
+          <span className={`text-[11px] font-bold uppercase tracking-wider flex items-center space-x-1.5 min-w-0 flex-1 truncate mr-1 ${
+            isLight ? 'text-sky-600' : 'text-sky-400'
+          }`}>
             <FolderTree className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="truncate">SFTP Files</span>
           </span>
@@ -471,7 +473,9 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
                 setNewFileName('');
                 setShowNewFileModal(true);
               }}
-              className="p-1 rounded hover:bg-white/10 text-emerald-400 hover:text-emerald-300 flex-shrink-0"
+              className={`p-1 rounded flex-shrink-0 transition-colors ${
+                isLight ? 'text-emerald-600 hover:text-emerald-700 hover:bg-slate-200' : 'text-emerald-400 hover:text-emerald-300 hover:bg-white/10'
+              }`}
               title={t('sftp.createFile') || 'Создать файл'}
             >
               <FilePlus className="w-3.5 h-3.5" />
@@ -483,7 +487,9 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
                 setNewFolderName('');
                 setShowNewFolderModal(true);
               }}
-              className="p-1 rounded hover:bg-white/10 text-sky-400 hover:text-sky-300 flex-shrink-0"
+              className={`p-1 rounded flex-shrink-0 transition-colors ${
+                isLight ? 'text-sky-600 hover:text-sky-700 hover:bg-slate-200' : 'text-sky-400 hover:text-sky-300 hover:bg-white/10'
+              }`}
               title={t('sftp.createFolder') || 'Создать папку'}
             >
               <FolderPlus className="w-3.5 h-3.5" />
@@ -492,7 +498,9 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
             {showMonitorSidebar ? (
               <button
                 onClick={onSwapPanels}
-                className="p-1 rounded hover:bg-white/10 text-amber-400 hover:text-amber-300 flex-shrink-0"
+                className={`p-1 rounded flex-shrink-0 transition-colors ${
+                  isLight ? 'text-amber-600 hover:text-amber-700 hover:bg-slate-200' : 'text-amber-400 hover:text-amber-300 hover:bg-white/10'
+                }`}
                 title={t('terminal.swapPanels')}
               >
                 <ArrowLeftRight className="w-3.5 h-3.5" />
@@ -500,7 +508,9 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
             ) : (
               <button
                 onClick={onTogglePosition}
-                className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white flex-shrink-0"
+                className={`p-1 rounded flex-shrink-0 transition-colors ${
+                  isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/10'
+                }`}
                 title={position === 'left' ? t('terminal.dockRight') : t('terminal.dockLeft')}
               >
                 {position === 'left' ? <PanelRight className="w-3.5 h-3.5" /> : <PanelLeft className="w-3.5 h-3.5" />}
@@ -510,7 +520,9 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
             <button
               onClick={handleSidebarNavigateUp}
               disabled={sftpPath === '/' || sftpPath === ''}
-              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white disabled:opacity-30 flex-shrink-0"
+              className={`p-1 rounded disabled:opacity-30 flex-shrink-0 transition-colors ${
+                isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
               title={t('sftp.parentFolder')}
             >
               <CornerLeftUp className="w-3.5 h-3.5" />
@@ -520,8 +532,8 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
               onClick={toggleClickMode}
               className={`px-1.5 py-0.5 rounded flex items-center space-x-1 text-[10px] font-mono transition-colors flex-shrink-0 ${
                 clickMode === 'single'
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'hover:bg-white/10 text-slate-400 hover:text-white'
+                  ? isLight ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  : isLight ? 'hover:bg-slate-200 text-slate-600 hover:text-slate-900' : 'hover:bg-white/10 text-slate-400 hover:text-white'
               }`}
               title={t('sftp.clickModeDesc')}
             >
@@ -531,7 +543,9 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
 
             <button
               onClick={() => loadSidebarDirectory(sftpPath, true)}
-              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white flex-shrink-0"
+              className={`p-1 rounded flex-shrink-0 transition-colors ${
+                isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
               title={t('sftp.refresh')}
             >
               <RotateCw className={`w-3.5 h-3.5 ${isSftpLoading ? 'animate-spin' : ''}`} />
@@ -539,7 +553,9 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
 
             <button
               onClick={onClose}
-              className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white flex-shrink-0"
+              className={`p-1 rounded flex-shrink-0 transition-colors ${
+                isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
               title={t('terminal.closeSidebar')}
             >
               <X className="w-3.5 h-3.5" />
@@ -616,7 +632,7 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
             <div className="flex items-center space-x-1.5 truncate flex-1">
               <CornerLeftUp className="w-3.5 h-3.5 text-sky-400 group-hover:-translate-y-0.5 transition-transform flex-shrink-0" />
               <span className="font-bold text-xs font-mono text-sky-400">..</span>
-              <span className="text-[10px] text-slate-400 font-sans truncate">
+              <span className={`text-[10px] font-sans truncate ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                 ({t('sftp.parentDirectory')})
               </span>
             </div>
@@ -624,7 +640,7 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
         )}
 
         {filteredSidebarFiles.length === 0 ? (
-          <div className="p-4 text-center text-[11px] text-slate-500">
+          <div className={`p-4 text-center text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
             {isSftpLoading ? 'Loading...' : 'Folder is empty'}
           </div>
         ) : (
@@ -691,7 +707,7 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
                   </span>
                 </div>
 
-                <div className="flex items-center space-x-1 text-[10px] text-slate-400 flex-shrink-0">
+                <div className={`flex items-center space-x-1 text-[10px] flex-shrink-0 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {file.isDirectory && (
                     <button
                       onClick={(e) => {

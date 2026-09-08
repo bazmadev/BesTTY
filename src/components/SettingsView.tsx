@@ -121,11 +121,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-500/20">
           <div>
-            <h2 className="text-xl font-bold flex items-center space-x-2">
+            <h2 className="text-xl font-bold tracking-tight flex items-center space-x-2">
               <Settings className="w-6 h-6 text-sky-500" />
               <span>{t('settings.title')}</span>
             </h2>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className={`text-xs mt-1 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               {t('settings.subtitle')}
             </p>
           </div>
@@ -151,7 +151,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Language Selector */}
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-medium">{t('settings.language')}</label>
+              <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('settings.language')}</label>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
@@ -194,7 +194,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             {/* Theme Selector */}
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-medium">{t('settings.theme')}</label>
+              <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('settings.theme')}</label>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
@@ -251,7 +251,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span className="text-xs font-medium block">
                 {t('settings.osc7Title')}
               </span>
-              <span className="text-[11px] text-slate-400 block mt-0.5">
+              <span className={`text-[11px] block mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                 {t('settings.osc7Desc')}
               </span>
             </div>
@@ -270,7 +270,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span className="text-xs font-medium block">
                 {t('settings.gpuTitle')}
               </span>
-              <span className="text-[11px] text-slate-400 block mt-0.5">
+              <span className={`text-[11px] block mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                 {t('settings.gpuDesc')}
               </span>
             </div>
@@ -296,7 +296,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">{t('settings.fontFamily')}</label>
+              <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('settings.fontFamily')}</label>
               <select
                 value={localSettings.fontFamily}
                 onChange={(e) => setLocalSettings({ ...localSettings, fontFamily: e.target.value })}
@@ -312,7 +312,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1">{t('settings.fontSize')}</label>
+              <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('settings.fontSize')}</label>
               <input
                 type="number"
                 min={10}
@@ -330,7 +330,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <div className="grid grid-cols-3 gap-4 pt-2">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">{t('settings.cursorStyle')}</label>
+              <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('settings.cursorStyle')}</label>
               <select
                 value={localSettings.cursorStyle}
                 onChange={(e) =>
@@ -347,7 +347,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1">{t('settings.cursorBlink')}</label>
+              <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('settings.cursorBlink')}</label>
               <div className="pt-2">
                 <input
                   type="checkbox"
@@ -361,7 +361,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1">{t('settings.scrollback')}</label>
+              <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('settings.scrollback')}</label>
               <input
                 type="number"
                 value={localSettings.scrollback}
@@ -385,14 +385,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <Shield className="w-4 h-4 text-emerald-500" />
               <span>{t('settings.securityTitle')}</span>
             </h3>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className={`text-xs mt-1 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               {t('settings.securityDesc')}
             </p>
           </div>
 
           {/* Protection Mode Cards */}
           <div className="space-y-2">
-            <label className="block text-xs text-slate-400 font-medium">
+            <label className={`block text-xs font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
               {t('settings.protectionMode')}
             </label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -419,7 +419,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
                 <div>
                   <div className="text-xs font-semibold">{t('settings.modeSystem')}</div>
-                  <div className="text-[11px] text-slate-400 mt-1 leading-snug">{t('settings.modeSystemDesc')}</div>
+                  <div className={`text-[11px] mt-1 leading-snug ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{t('settings.modeSystemDesc')}</div>
                 </div>
               </div>
 
@@ -446,7 +446,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
                 <div>
                   <div className="text-xs font-semibold">{t('settings.modePassword')}</div>
-                  <div className="text-[11px] text-slate-400 mt-1 leading-snug">{t('settings.modePasswordDesc')}</div>
+                  <div className={`text-[11px] mt-1 leading-snug ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{t('settings.modePasswordDesc')}</div>
                 </div>
               </div>
 
@@ -473,7 +473,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
                 <div>
                   <div className="text-xs font-semibold">{t('settings.modePlain')}</div>
-                  <div className="text-[11px] text-slate-400 mt-1 leading-snug">{t('settings.modePlainDesc')}</div>
+                  <div className={`text-[11px] mt-1 leading-snug ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{t('settings.modePlainDesc')}</div>
                 </div>
               </div>
             </div>
@@ -492,7 +492,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
                 <div>
                   <h4 className="text-xs font-semibold">{t('settings.biometricsTitle')}</h4>
-                  <p className="text-[11px] text-slate-400">
+                  <p className={`text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                     {vaultStatus?.biometricsAvailable
                       ? t('settings.biometricsAvailable')
                       : t('settings.biometricsUnavailable')}
@@ -587,7 +587,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     Open Source
                   </span>
                 </div>
-                <p className="text-xs text-slate-400 mt-0.5 max-w-md">
+                <p className={`text-xs mt-0.5 max-w-md ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {t('about.tagline')}
                 </p>
               </div>
@@ -627,7 +627,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <Heart className="w-4 h-4 fill-rose-500" />
                 <span>{t('about.donateTitle')}</span>
               </span>
-              <p className="text-[11px] text-slate-400 max-w-lg">
+              <p className={`text-[11px] max-w-lg ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                 {t('about.donateSubtitle')}
               </p>
             </div>

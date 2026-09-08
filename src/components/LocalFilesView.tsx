@@ -530,7 +530,9 @@ export const LocalFilesView: React.FC<LocalFilesViewProps> = ({
       }`}>
         <button
           onClick={handleNavigateUp}
-          className="p-1 mr-2 rounded hover:bg-slate-500/10 text-slate-400 hover:text-sky-400 transition-colors"
+          className={`p-1 mr-2 rounded transition-colors ${
+            isLight ? 'text-slate-600 hover:text-sky-600 hover:bg-slate-200' : 'text-slate-400 hover:text-sky-400 hover:bg-slate-500/10'
+          }`}
           title={t('sftp.upOneLevelTip')}
         >
           <CornerLeftUp className="w-3.5 h-3.5" />
@@ -543,7 +545,7 @@ export const LocalFilesView: React.FC<LocalFilesViewProps> = ({
         <div className={`border-b p-2.5 flex items-center space-x-2 ${
           isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#242424] border-[#333]'
         }`}>
-          <span className="text-xs text-slate-400">{t('sftp.folderName')}</span>
+          <span className={`text-xs font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('sftp.folderName')}</span>
           <form onSubmit={handleCreateFolder} className="flex items-center space-x-2 flex-1">
             <input
               type="text"
@@ -563,7 +565,9 @@ export const LocalFilesView: React.FC<LocalFilesViewProps> = ({
             <button
               type="button"
               onClick={() => setShowNewFolder(false)}
-              className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1"
+              className={`text-xs px-2 py-1 rounded transition-colors ${
+                isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
               {t('sftp.cancel')}
             </button>
@@ -576,7 +580,7 @@ export const LocalFilesView: React.FC<LocalFilesViewProps> = ({
         <div className={`border-b p-2.5 flex items-center space-x-2 ${
           isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#242424] border-[#333]'
         }`}>
-          <span className="text-xs text-slate-400 truncate max-w-xs">
+          <span className={`text-xs font-medium truncate max-w-xs ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
             {t('sftp.renamePrompt').replace('{name}', renameTarget.name)}
           </span>
           <form onSubmit={handleRename} className="flex items-center space-x-2 flex-1">
@@ -598,7 +602,9 @@ export const LocalFilesView: React.FC<LocalFilesViewProps> = ({
             <button
               type="button"
               onClick={() => setRenameTarget(null)}
-              className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1"
+              className={`text-xs px-2 py-1 rounded transition-colors ${
+                isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
               {t('sftp.cancel')}
             </button>
@@ -655,7 +661,7 @@ export const LocalFilesView: React.FC<LocalFilesViewProps> = ({
                 <td colSpan={4} className="py-2 px-3 font-semibold font-mono text-xs text-sky-400">
                   <div className="flex items-center space-x-2">
                     <span className="font-bold text-sm">..</span>
-                    <span className="text-[11px] font-sans font-normal text-slate-400">
+                    <span className={`text-[11px] font-sans font-normal ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                       ({t('sftp.parentDirectory')})
                     </span>
                   </div>
@@ -720,10 +726,10 @@ export const LocalFilesView: React.FC<LocalFilesViewProps> = ({
                 }`}>
                   {file.name}
                 </td>
-                <td className="py-1.5 px-3 text-right text-slate-400">
+                <td className={`py-1.5 px-3 text-right ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {formatSize(file.size)}
                 </td>
-                <td className="py-1.5 px-3 text-slate-400 text-[11px]">
+                <td className={`py-1.5 px-3 text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {file.modifyTime ? new Date(file.modifyTime).toLocaleString() : '-'}
                 </td>
                 <td className="py-1.5 px-3 text-center">
@@ -734,7 +740,9 @@ export const LocalFilesView: React.FC<LocalFilesViewProps> = ({
                         e.stopPropagation();
                         handleCopy(file);
                       }}
-                      className="p-1 rounded text-slate-400 hover:text-sky-400 hover:bg-sky-500/15 transition-colors"
+                      className={`p-1 rounded transition-colors ${
+                        isLight ? 'text-slate-600 hover:text-sky-600 hover:bg-sky-50' : 'text-slate-400 hover:text-sky-400 hover:bg-sky-500/15'
+                      }`}
                       title={t('sftp.copy')}
                     >
                       <Copy className="w-3.5 h-3.5" />
@@ -745,7 +753,9 @@ export const LocalFilesView: React.FC<LocalFilesViewProps> = ({
                         setRenameTarget(file);
                         setNewName(file.name);
                       }}
-                      className="p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-amber-500/15 transition-colors"
+                      className={`p-1 rounded transition-colors ${
+                        isLight ? 'text-slate-600 hover:text-amber-600 hover:bg-amber-50' : 'text-slate-400 hover:text-amber-400 hover:bg-amber-500/15'
+                      }`}
                       title={t('sftp.rename')}
                     >
                       <Edit3 className="w-3.5 h-3.5" />
@@ -755,7 +765,9 @@ export const LocalFilesView: React.FC<LocalFilesViewProps> = ({
                         e.stopPropagation();
                         handleDelete(file);
                       }}
-                      className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 transition-colors"
+                      className={`p-1 rounded transition-colors ${
+                        isLight ? 'text-slate-600 hover:text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-rose-400 hover:bg-rose-500/15'
+                      }`}
                       title={t('sftp.delete')}
                     >
                       <Trash2 className="w-3.5 h-3.5" />

@@ -605,7 +605,7 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
                   />
                   <div className="flex-1">
                     <div className="font-medium text-xs">{t('terminal.syncTermToBrowser')}</div>
-                    <div className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                    <div className={`text-[10px] leading-tight mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                       {t('terminal.syncTermToBrowserDesc')}
                     </div>
                   </div>
@@ -622,7 +622,7 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
                   />
                   <div className="flex-1">
                     <div className="font-medium text-xs">{t('terminal.syncBrowserToTerm')}</div>
-                    <div className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                    <div className={`text-[10px] leading-tight mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                       {t('terminal.syncBrowserToTermDesc')}
                     </div>
                   </div>
@@ -784,7 +784,7 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
                 <td colSpan={5} className="py-2 px-3 font-semibold font-mono text-xs text-sky-400">
                   <div className="flex items-center space-x-2">
                     <span className="font-bold text-sm">..</span>
-                    <span className="text-[11px] font-sans font-normal text-slate-400">
+                    <span className={`text-[11px] font-sans font-normal ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                       ({t('sftp.parentDirectory')})
                     </span>
                   </div>
@@ -849,13 +849,13 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
                 }`}>
                   {file.name}
                 </td>
-                <td className="py-1.5 px-3 text-right text-slate-400">
+                <td className={`py-1.5 px-3 text-right ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {formatSize(file.size)}
                 </td>
-                <td className="py-1.5 px-3 text-center text-slate-400 font-mono text-[11px]">
+                <td className={`py-1.5 px-3 text-center font-mono text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {file.permissions}
                 </td>
-                <td className="py-1.5 px-3 text-slate-400 text-[11px]">
+                <td className={`py-1.5 px-3 text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {file.modifyTime ? new Date(file.modifyTime).toLocaleString() : '-'}
                 </td>
                 <td className="py-1.5 px-3 text-center">
@@ -867,7 +867,9 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
                           e.stopPropagation();
                           onNavigateToTerminal(file.path);
                         }}
-                        className="p-1 hover:bg-sky-500/20 text-sky-400 rounded transition-colors"
+                        className={`p-1 rounded transition-colors ${
+                          isLight ? 'hover:bg-sky-50 text-sky-600' : 'hover:bg-sky-500/20 text-sky-400'
+                        }`}
                         title={t('sftp.openInTerminalTip')}
                       >
                         <TerminalIcon className="w-3.5 h-3.5" />
@@ -879,7 +881,9 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
                           e.stopPropagation();
                           onOpenFileInEditor(file.path, file.name);
                         }}
-                        className="p-1 hover:bg-sky-500/20 text-sky-500 rounded"
+                        className={`p-1 rounded transition-colors ${
+                          isLight ? 'hover:bg-sky-50 text-sky-600' : 'hover:bg-sky-500/20 text-sky-500'
+                        }`}
                         title={t('sftp.editInMonaco')}
                       >
                         <Edit className="w-3.5 h-3.5" />
@@ -890,7 +894,9 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
                         e.stopPropagation();
                         handleCopy(file);
                       }}
-                      className="p-1 hover:bg-sky-500/20 text-slate-400 hover:text-sky-400 rounded transition-colors"
+                      className={`p-1 rounded transition-colors ${
+                        isLight ? 'hover:bg-sky-50 text-slate-600 hover:text-sky-600' : 'hover:bg-sky-500/20 text-slate-400 hover:text-sky-400'
+                      }`}
                       title={t('sftp.copy')}
                     >
                       <Copy className="w-3.5 h-3.5" />
@@ -902,7 +908,7 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
                         setNewName(file.name);
                       }}
                       className={`p-1 rounded transition-colors ${
-                        isLight ? 'hover:bg-slate-200 text-slate-500 hover:text-slate-900' : 'hover:bg-white/10 text-slate-400 hover:text-white'
+                        isLight ? 'hover:bg-slate-200 text-slate-600 hover:text-slate-900' : 'hover:bg-white/10 text-slate-400 hover:text-white'
                       }`}
                       title={t('sftp.rename')}
                     >
@@ -913,7 +919,9 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
                         e.stopPropagation();
                         handleDelete(file);
                       }}
-                      className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-500 rounded transition-colors"
+                      className={`p-1 rounded transition-colors ${
+                        isLight ? 'hover:bg-red-50 text-slate-600 hover:text-red-600' : 'hover:bg-red-500/20 text-slate-400 hover:text-red-500'
+                      }`}
                       title={t('sftp.delete')}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -966,7 +974,7 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
               <FilePlus className="w-4 h-4" />
               <span>{t('sftp.createFile') || 'Создать файл'}</span>
             </div>
-            <p className="text-[11px] text-slate-400 font-mono truncate">
+            <p className={`text-[11px] font-mono truncate ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               {currentPath}
             </p>
             <input
@@ -983,7 +991,9 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => setShowNewFile(false)}
-                className="px-3 py-1 rounded-lg text-xs hover:bg-white/10 text-slate-400"
+                className={`px-3 py-1 rounded-lg text-xs transition-colors ${
+                  isLight ? 'hover:bg-slate-200 text-slate-600 hover:text-slate-900' : 'hover:bg-white/10 text-slate-400'
+                }`}
               >
                 {t('sftp.cancel')}
               </button>

@@ -244,13 +244,16 @@ export const VaultModal: React.FC<VaultModalProps> = ({
               {mode === 'recover' && t('vault.recoverTitle')}
             </h3>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200">
+          <button
+            onClick={onClose}
+            className={`transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'}`}
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Description */}
-        <p className="text-xs text-slate-400 leading-relaxed">
+        <p className={`text-xs leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
           {mode === 'unlock' && (vaultStatus.protectionMode === 'system' ? t('vault.systemModeDesc') : t('vault.unlockDesc'))}
           {mode === 'setup' && t('vault.setDesc')}
           {mode === 'recover' && t('vault.recoverDesc')}
@@ -285,7 +288,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   <h4 className="text-xs font-semibold text-sky-400">
                     {t('vault.systemModeTitle')}
                   </h4>
-                  <p className="text-[11px] text-slate-400 mt-1 max-w-xs leading-relaxed">
+                  <p className={`text-[11px] mt-1 max-w-xs leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                     {t('vault.systemModeDesc')}
                   </p>
                 </div>
@@ -317,7 +320,9 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                     type="button"
                     disabled={loading}
                     onClick={handleSystemUnlock}
-                    className="text-[11px] text-slate-400 hover:text-slate-200 hover:underline flex items-center space-x-1"
+                    className={`text-[11px] hover:underline flex items-center space-x-1 ${
+                      isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
+                    }`}
                   >
                     <span>{t('vault.unlockSystem')}</span>
                   </button>
@@ -341,7 +346,9 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-3 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-500/10"
+                  className={`px-3 py-1.5 rounded text-xs transition-colors ${
+                    isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:bg-slate-500/10'
+                  }`}
                 >
                   {t('modal.cancel')}
                 </button>
@@ -362,13 +369,13 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                     <Fingerprint className="w-4 h-4" />
                     <span>{loading ? t('vault.processing') : t('vault.unlockWithHello')}</span>
                   </button>
-                  <span className="text-[11px] text-slate-400 font-medium">— {t('vault.orEnterPassword')} —</span>
+                  <span className={`text-[11px] font-medium ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>— {t('vault.orEnterPassword')} —</span>
                 </div>
               )}
 
               <form onSubmit={handleUnlockSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">{t('vault.masterPassword')}</label>
+                  <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('vault.masterPassword')}</label>
                   <input
                     type="password"
                     autoFocus={!vaultStatus.biometricsEnabled}
@@ -398,7 +405,9 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-3 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-500/10"
+                    className={`px-3 py-1.5 rounded text-xs transition-colors ${
+                      isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:bg-slate-500/10'
+                    }`}
                   >
                     {t('modal.cancel')}
                   </button>
@@ -420,7 +429,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
           <form onSubmit={handleSetupSubmit} className="space-y-3.5">
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">{t('vault.masterPassword')}</label>
+                <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('vault.masterPassword')}</label>
                 <input
                   type="password"
                   autoFocus
@@ -433,7 +442,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">{t('vault.confirmPassword')}</label>
+                <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('vault.confirmPassword')}</label>
                 <input
                   type="password"
                   required
@@ -466,7 +475,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                     className={`px-2 py-0.5 font-medium ${
                       recoveryType === 'mnemonic'
                         ? 'bg-sky-600 text-white'
-                        : isLight ? 'bg-white text-slate-600' : 'bg-[#222] text-slate-400'
+                        : isLight ? 'bg-white text-slate-700 font-medium' : 'bg-[#222] text-slate-400'
                     }`}
                   >
                     12-Word Phrase
@@ -480,7 +489,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                     className={`px-2 py-0.5 font-medium ${
                       recoveryType === 'alphanumeric'
                         ? 'bg-sky-600 text-white'
-                        : isLight ? 'bg-white text-slate-600' : 'bg-[#222] text-slate-400'
+                        : isLight ? 'bg-white text-slate-700 font-medium' : 'bg-[#222] text-slate-400'
                     }`}
                   >
                     24-Char Key
@@ -509,7 +518,11 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   <button
                     type="button"
                     onClick={handleDownloadKey}
-                    className="flex items-center space-x-1 px-2 py-1 rounded bg-slate-500/15 border border-slate-500/30 text-slate-300 hover:bg-slate-500/25 text-[11px] font-medium"
+                    className={`flex items-center space-x-1 px-2 py-1 rounded border text-[11px] font-medium transition-colors ${
+                      isLight
+                        ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                        : 'bg-slate-500/15 border-slate-500/30 text-slate-300 hover:bg-slate-500/25'
+                    }`}
                   >
                     <span>{t('vault.downloadKey')}</span>
                   </button>
@@ -517,7 +530,9 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                 <button
                   type="button"
                   onClick={() => regenerateKey(recoveryType)}
-                  className="p-1 rounded text-slate-400 hover:text-white"
+                  className={`p-1 rounded transition-colors ${
+                    isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white'
+                  }`}
                   title="Generate new key"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
@@ -525,7 +540,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
               </div>
 
               {/* Confirmation Checkbox */}
-              <label className="flex items-start space-x-2 pt-1 text-[11px] text-slate-400 cursor-pointer select-none">
+              <label className={`flex items-start space-x-2 pt-1 text-[11px] cursor-pointer select-none ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
                 <input
                   type="checkbox"
                   required
@@ -533,7 +548,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   onChange={(e) => setHasConfirmedSaved(e.target.checked)}
                   className="mt-0.5 rounded border-slate-400 text-sky-600 focus:ring-0"
                 />
-                <span className={hasConfirmedSaved ? 'text-emerald-400 font-medium' : 'text-slate-400'}>
+                <span className={hasConfirmedSaved ? (isLight ? 'text-emerald-700 font-semibold' : 'text-emerald-400 font-medium') : (isLight ? 'text-slate-600' : 'text-slate-400')}>
                   {t('vault.savedKeyConfirm')}
                 </span>
               </label>
@@ -554,7 +569,9 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-3 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-500/10"
+                  className={`px-3 py-1.5 rounded text-xs transition-colors ${
+                    isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:bg-slate-500/10'
+                  }`}
                 >
                   {t('modal.cancel')}
                 </button>
@@ -574,7 +591,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
         {mode === 'recover' && (
           <form onSubmit={handleRecoverSubmit} className="space-y-3.5">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">
+              <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
                 {t('vault.recoveryKeyInput')}
               </label>
               <textarea
@@ -592,7 +609,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">{t('vault.newPassword')}</label>
+                <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('vault.newPassword')}</label>
                 <input
                   type="password"
                   required
@@ -604,7 +621,7 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">{t('vault.confirmNewPassword')}</label>
+                <label className={`block text-xs mb-1 font-medium ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t('vault.confirmNewPassword')}</label>
                 <input
                   type="password"
                   required
@@ -624,7 +641,9 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                   setError(null);
                   setMode('unlock');
                 }}
-                className="flex items-center space-x-1 text-slate-400 hover:text-white text-xs"
+                className={`flex items-center space-x-1 text-xs transition-colors ${
+                  isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+                }`}
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>{t('vault.backToUnlock')}</span>
@@ -634,7 +653,9 @@ export const VaultModal: React.FC<VaultModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-3 py-1.5 rounded text-xs text-slate-400 hover:bg-slate-500/10"
+                  className={`px-3 py-1.5 rounded text-xs transition-colors ${
+                    isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:bg-slate-500/10'
+                  }`}
                 >
                   {t('modal.cancel')}
                 </button>

@@ -46,13 +46,13 @@ export const HelpModal: React.FC<HelpModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold tracking-tight">{t('help.title')}</h3>
-              <p className="text-xs text-slate-400">{t('help.subtitle')}</p>
+              <p className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{t('help.subtitle')}</p>
             </div>
           </div>
           <button
             onClick={onClose}
             className={`p-1.5 rounded-lg transition-colors ${
-              isLight ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/10'
+              isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-white/10'
             }`}
           >
             <X className="w-5 h-5" />
