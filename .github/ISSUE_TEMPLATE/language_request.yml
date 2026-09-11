@@ -1,0 +1,43 @@
+name: 🌐 Language Request / Запрос нового языка / Նոր լեզվի հարցում
+description: Request a new language to be added to BesTTY in future releases / Запросить добавление нового языка в BesTTY
+title: "[Language Request]: "
+labels: ["localization", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 🌍 Request a New Language / Запрос нового языка
+        Thanks for helping make BesTTY accessible to users worldwide!
+        Спасибо за помощь в локализации BesTTY! Языки с наибольшим количеством запросов добавляются в первую очередь.
+        Շնորհակալություն BesTTY-ն ավելի հասանելի դարձնելու համար:
+  - type: input
+    id: language_name
+    attributes:
+      label: Language Name / Название языка / Լեզվի անվանումը
+      description: e.g., German, Spanish, French, Chinese, Turkish (Deutsch, Español, Français, 中文, Türkçe)
+      placeholder: "e.g., German (Deutsch)"
+    validations:
+      required: true
+  - type: input
+    id: language_code
+    attributes:
+      label: Language Code (ISO 639-1) / Код языка
+      description: e.g., de, es, fr, zh, tr, it, pt, ja, ko
+      placeholder: "e.g., de"
+    validations:
+      required: true
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Can you help with the translation? / Можете ли вы помочь с переводом?
+      options:
+        - "Yes, I can provide/review the translations (Да, я готов перевести / проверить)"
+        - "I can help test and verify the translation in the app (Могу протестировать в приложении)"
+        - "No, I am just requesting support for this language (Только запрашиваю поддержку языка)"
+    validations:
+      required: true
+  - type: textarea
+    id: additional_notes
+    attributes:
+      label: Additional Notes / Дополнительные пожелания
+      description: Any specific regional variations or terminology preferences?

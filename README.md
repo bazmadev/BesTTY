@@ -4,6 +4,11 @@
 
 ---
 
+**Languages / Языки / Լեզուներ:**  
+[English](#-bestty--the-next-gen-open-source-sshsftp-client-for-windows-10--11) • [Русский](#-описание-на-русском-языке) • [Հայերեն](#-նկարագրություն-հայերենով) • [🌐 Request a Language / Запросить язык](#-локализация-и-запрос-новых-языков--localization--language-requests)
+
+---
+
 ## ✨ Why BesTTY?
 
 For years, **SmarTTY** was the undisputed favorite tool for developers and sysadmins working with Linux servers because of its revolutionary multi-tab terminal, graphical SFTP sidebar, and instant in-place file editor. However, its development ceased in 2022, leaving it with outdated crypto, blurry High-DPI fonts, lack of split panes, and missing modern authentication (FIDO2, Windows OpenSSH agent).
@@ -72,6 +77,129 @@ Other tools either have outdated 2000s-era interfaces (PuTTY, MobaXterm) or have
 - Encrypted with **AES-256-GCM** using **PBKDF2** (100,000 rounds) key derivation.
 - Master password lock/unlock with auto-clearing memory buffers.
 - Support for Windows OpenSSH named pipe agent (`\\.\pipe\openssh-ssh-agent`) and Pageant.
+
+---
+
+## 🌐 Локализация и запрос новых языков / Localization & Language Requests
+
+BesTTY aims to support developers and sysadmins across the globe. You can easily request your native language or help us translate the interface!
+
+| Language | Code | Status | Issue / PR |
+| :--- | :---: | :---: | :---: |
+| **English** | `en` | ✅ Available (Default) | Built-in |
+| **Русский (Russian)** | `ru` | ✅ Available | Built-in |
+| **Հայերեն (Armenian)** | `hy` | ✅ Available | Built-in |
+| *Your Language Here* | — | ⏳ Available upon request | [👉 Request New Language](https://github.com/bazmadev/BesTTY/issues/new?template=language_request.yml) |
+
+### 🗳️ How to Request a New Language:
+1. Open a new request via our [🌐 Language Request Issue Template](https://github.com/bazmadev/BesTTY/issues/new?template=language_request.yml).
+2. Specify your language name and ISO code (e.g. `de` for German, `es` for Spanish, `fr` for French, `zh` for Chinese, etc.).
+3. Languages with the highest community demand are prioritized for upcoming releases!
+4. If you want to contribute translations directly, mention it in the issue — we warmly welcome pull requests!
+
+---
+
+## 🇷🇺 Описание на русском языке
+
+### 🚀 BesTTY — Open-Source SSH/SFTP клиент нового поколения для Windows 10 & 11
+
+> **Духовный наследник легендарного SmarTTY**, переосмысленный для 2026 года с ультрасовременным дизайном Windows 11 Fluent 2 / Mica, аппаратным WebGL-ускорением терминала, встроенным редактором кода Monaco, телеметрией сервера в реальном времени и защищенным хранилищем с шифрованием AES-256.
+
+### ✨ Почему BesTTY?
+
+Долгие годы программа **SmarTTY** оставалась незаменимым инструментом для разработчиков, DevOps-инженеров и системных администраторов благодаря удобным вкладкам, наглядному графическому SFTP-проводнику и мгновенному редактированию файлов без ручного скачивания. Однако разработка SmarTTY прекратилась в 2022 году, из-за чего в ней остались устаревшие алгоритмы криптографии, размытые шрифты на экранах с высоким разрешением (High-DPI/4K), отсутствие разделения экрана (Split View) и отсутствие поддержки современного OpenSSH-агента Windows.
+
+Другие решения либо застряли в интерфейсах эпохи 2000-х годов (PuTTY, MobaXterm), либо берут ежемесячную платную подписку от $12/месяц за базовые функции (Termius).
+
+**BesTTY на 100% бесплатный и полностью открытый проект (лицензия MIT)**, созданный специально для комфортной повседневной работы на Windows 10 и 11 с удаленными серверами Linux, VPS/VDS, облаками (AWS, Hetzner, DigitalOcean) и домашними серверами (HomeLab).
+
+### 🛠️ Ключевые возможности:
+
+1. **🖥️ Аппаратно ускоренный терминал на GPU (WebGL)**:
+   - Плавная прокрутка с частотой 120+ FPS на базе `@xterm/xterm` и WebGL.
+   - Полная поддержка TrueColor (24-bit RGB), ANSI 16/256 цветов, Unicode 15 и шрифтов для разработчиков со значками Powerline / Nerd Fonts (Cascadia Code, JetBrains Mono, Fira Code).
+   - Интерактивные кликабельные ссылки (OSC 8) и поиск по истории терминала (`Ctrl+F`).
+   - **Умное отслеживание каталогов (OSC 7)**: при выполнении `cd /var/www` в bash/zsh SFTP-проводник автоматически переходит в указанную папку!
+
+2. **📂 Встроенный SFTP-проводник**:
+   - Управление файлами в один или два клика (настраивается по предпочтению).
+   - Удобная навигация («хлебные крошки»), быстрый переход по папкам.
+   - Загрузка, скачивание, создание каталогов, удаление, переименование и редактирование прав доступа Unix (`chmod 755 / 644`).
+   - Возможность разделить экран (Split View) для одновременной работы с локальными файлами Windows и удаленным SFTP сервером.
+
+3. **📝 Встроенный редактор кода Monaco (движок VS Code)**:
+   - Открытие и редактирование удаленных файлов прямо на сервере в один клик без промежуточных временных файлов.
+   - Подсветка синтаксиса для более чем 70 языков (Nginx, Dockerfile, Python, Shell/Bash, YAML, JSON, SQL и др.).
+   - **Sudo Save**: если файл защищен правами root (например `/etc/nginx/nginx.conf`), BesTTY сохранит его через `sudo tee` без ошибки отказа в доступе.
+   - **Встроенный Diff-просмотр**: сравнение локальных изменений с оригиналом на сервере перед сохранением.
+
+4. **📈 Мониторинг VPS в реальном времени**:
+   - Фоновый поток телеметрии с обновлением каждые 3 секунды.
+   - Наглядные графики использования процессора (CPU %), оперативной памяти (RAM) и файла подкачки (Swap).
+   - Средняя загрузка (Load Average 1m, 5m, 15m) и время аптайма.
+   - Заполненность дисковых разделов.
+   - Список ресурсоемких процессов с возможностью завершения (`SIGTERM` / `SIGKILL`).
+
+5. **🌐 Менеджер SSH-туннелей и проброса портов (Port Forwarding)**:
+   - **Local Port Forwarding (`-L`)**: проброс портов к закрытым внутренним базам данных (PostgreSQL, MySQL, Redis).
+   - **Dynamic Port Forwarding (`-D`)**: превращение любого SSH-соединения в персональный **SOCKS5-прокси** для безопасного веб-серфинга.
+   - **Remote Port Forwarding (`-R`)**: доступ к локальным веб-серверам разработки из интернета.
+
+6. **🔐 Зашифрованное хранилище Vault (Zero-Knowledge)**:
+   - Все пароли, приватные ключи, настройки хостов и сниппеты защищены шифрованием **AES-256-GCM** с алгоритмом PBKDF2 (100 000 итераций).
+   - Поддержка системного агента ключей Windows OpenSSH (`\\.\pipe\openssh-ssh-agent`) и Pageant.
+
+---
+
+## 🇦🇲 Նկարագրություն հայերենով
+
+### 🚀 BesTTY — Նոր սերնդի բաց կոդով SSH/SFTP ծրագիր Windows 10 և 11-ի համար
+
+> **Լեգենդար SmarTTY-ի գաղափարական շարունակությունը**, վերաիմաստավորված 2026 թվականի համար՝ Windows 11 Fluent 2 / Mica դիզայնով, GPU-արագացված տերմինալով, ներկառուցված Monaco կոդի խմբագրիչով, VPS ռեսուրսների իրական ժամանակում մոնիթորինգով և AES-256 ծածկագրված անվտանգ պահոցով:
+
+### ✨ Ինչո՞ւ ընտրել BesTTY-ն
+
+Երկար տարիներ **SmarTTY**-ն համարվում էր ծրագրավորողների և համակարգային ադմինիստրատորների ամենասիրելի գործիքներից մեկը՝ շնորհիվ ներդիրներով (tabs) տերմինալի, SFTP ֆայլային կառավարչի և ֆայլերի տեղում խմբագրման հնարավորության: Սակայն SmarTTY-ի զարգացումը դադարեցվել է 2022 թվականին, ինչի պատճառով այնտեղ բացակայում էին ժամանակակից կրիպտոգրաֆիկ ալգորիթմները, High-DPI/4K էկրանների վրա տեքստը լղոզված էր, բացակայում էր էկրանի բաժանումը (Split View) և Windows OpenSSH գործակալի աջակցությունը:
+
+Այլ ծրագրերը կամ ունեն 2000-ականների հնացած ինտերֆեյս (PuTTY, MobaXterm), կամ հիմնական գործառույթների համար պահանջում են ամսական թանկ բաժանորդագրություն (Termius, $12+/ամիս):
+
+**BesTTY-ն 100% անվճար է և բաց կոդով (MIT լիցենզիա)**, ստեղծված հատուկ Windows 10 և 11 օգտատերերի համար՝ Linux սերվերների, VPS/VDS-ների, ամպային ծառայությունների (AWS, Hetzner, DigitalOcean) և տնային սերվերների (HomeLab) հետ առավելագույնս հարմարավետ աշխատելու նպատակով:
+
+### 🛠️ Հիմնական առանձնահատկությունները՝
+
+1. **🖥️ GPU-արագացված վիրտուալ տերմինալ (WebGL)**՝
+   - Գերարագ և սահուն ոլորում 120+ FPS արագությամբ՝ `@xterm/xterm` և WebGL տեխնոլոգիայով:
+   - TrueColor (24-bit RGB), ANSI 16/256 գույներ, Unicode 15 և ծրագրավորման լեզուների Nerd Fonts / Cascadia Code տառատեսակների ամբողջական աջակցություն:
+   - Ինտերակտիվ սեղմվող հղումներ (OSC 8) և որոնում տերմինալի պատմության մեջ (`Ctrl+F`):
+   - **Կատալոգների խելացի հետևում (OSC 7)**՝ bash/zsh տերմինալում `cd` հրաման կատարելիս SFTP կառավարիչն ինքնաշխատ կերպով բացում է համապատասխան թղթապանակը:
+
+2. **📂 Գրաֆիկական SFTP ֆայլային կառավարիչ**՝
+   - Ֆայլերի դիտում և նավիգացիա մեկ կամ երկու կտտոցով (կարգավորելի ըստ ցանկության):
+   - Արագ նավիգացիա («հացի փշրանքներ»), թղթապանակների հարմար որոնում:
+   - Ներբեռնում, վերբեռնում, նոր թղթապանակների ստեղծում, հեռացում, վերանվանում և Unix թույլտվությունների խմբագրում (`chmod 755 / 644`):
+   - Էկրանի բաժանում (Split View)՝ տեղական Windows ֆայլերի և հեռակա սերվերի SFTP-ի միջև ֆայլերի հեշտ փոխանակման համար:
+
+3. **📝 Ներկառուցված Monaco կոդի խմբագրիչ (VS Code շարժիչ)**՝
+   - Ֆայլերի բացում և խմբագրում անմիջապես սերվերի վրա՝ առանց ձեռքով ներբեռնելու:
+   - 70-ից ավելի ծրագրավորման լեզուների շարահյուսական գունավորում (Nginx, Dockerfile, Python, Bash, YAML, JSON, SQL և այլն):
+   - **Sudo Save**՝ root իրավունքներ պահանջող ֆայլերի (օր. `/etc/nginx/nginx.conf`) պահպանում `sudo tee`-ի միջոցով՝ առանց իրավունքի մերժման սխալի:
+   - **Ներկառուցված Diff տեսարան**՝ կատարված փոփոխությունները նախնական ֆայլի հետ համեմատելու հնարավորություն:
+
+4. **📈 VPS-ի իրական ժամանակի մոնիթորինգ**՝
+   - Համակարգային ռեսուրսների ավտոմատ թարմացում յուրաքանչյուր 3 վայրկյանը մեկ:
+   - Պրոցեսորի (CPU %), օպերատիվ հիշողության (RAM) և Swap-ի տեսողական գրաֆիկներ:
+   - Միջին ծանրաբեռնվածության (Load Average) և սերվերի աշխատանքի տևողության (Uptime) ցուցիչներ:
+   - Կոշտ սկավառակների ծավալի զբաղվածության ստուգում:
+   - Ամենաշատ ռեսուրս օգտագործող գործընթացների ցանկ՝ դրանք անջատելու հնարավորությամբ (`SIGTERM` / `SIGKILL`):
+
+5. **🌐 SSH թունելներ և Port Forwarding**՝
+   - **Local Port Forwarding (`-L`)**՝ տեղական պորտերի վերահասցեավորում դեպի ներքին տվյալների բազաներ (PostgreSQL, MySQL, Redis):
+   - **Dynamic Port Forwarding (`-D`)**՝ SSH կապի վերածում անձնական **SOCKS5 Proxy**-ի՝ ապահով ինտերնետ կապ ապահովելու համար:
+   - **Remote Port Forwarding (`-R`)**՝ լոկալ ծրագրերի հասանելի դարձնելը համացանցում:
+
+6. **🔐 Ծածկագրված պահոց (Zero-Knowledge Vault)**՝
+   - Բոլոր գաղտնաբառերը, SSH բանալիները և կարգավորումները պահպանվում են **AES-256-GCM** ծածկագրմամբ և PBKDF2 ալգորիթմով (100,000 իտերացիա):
+   - Windows OpenSSH (`\\.\pipe\openssh-ssh-agent`) և Pageant աջակցություն:
 
 ---
 
