@@ -15,7 +15,7 @@ For years, **SmarTTY** was the undisputed favorite tool for developers and sysad
 
 Other tools either have outdated 2000s-era interfaces (PuTTY, MobaXterm) or have locked basic sysadmin features behind steep $12+/month subscriptions (Termius).
 
-**BesTTY is 100% Free & Open Source (MIT License)**, built from the ground up to provide the ultimate desktop experience for Windows 10/11 users managing Linux VPS, dedicated servers, clouds (AWS, Hetzner, DigitalOcean), and home labs.
+**BesTTY is 100% Free & Open Source (MIT License with Non-Commercial & Author Protection Conditions)**, built from the ground up to provide the ultimate desktop experience for Windows 10/11 users managing Linux VPS, dedicated servers, clouds (AWS, Hetzner, DigitalOcean), and home labs.
 
 ---
 
@@ -23,7 +23,7 @@ Other tools either have outdated 2000s-era interfaces (PuTTY, MobaXterm) or have
 
 | Capability | BesTTY | SmarTTY (Legacy) | PuTTY | Termius | MobaXterm |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **License** | **Free / MIT** | Free (Closed source) | Free / Open Source | Paid ($12+/mo for features) | Freemium ($69/seat) |
+| **License** | **Free / MIT (Non-Commercial)** | Free (Closed source) | Free / Open Source | Paid ($12+/mo for features) | Freemium ($69/seat) |
 | **UI Design** | **Windows 11 Fluent 2 / Mica** | WinForms (Old) | Win32 Classic (1998) | Modern Web | Outdated X11 GUI |
 | **High-DPI / 4K Crispness** | **100% Native Vector** | ❌ Blurry fonts | ❌ Fixed bitmap | Modern | Mixed / Scaled |
 | **GPU-Accelerated Terminal** | **WebGL / 120+ FPS** | ❌ Software GDI | ❌ Software GDI | WebGL | ❌ Software |
@@ -111,7 +111,7 @@ BesTTY aims to support developers and sysadmins across the globe. You can easily
 
 Другие решения либо застряли в интерфейсах эпохи 2000-х годов (PuTTY, MobaXterm), либо берут ежемесячную платную подписку от $12/месяц за базовые функции (Termius).
 
-**BesTTY на 100% бесплатный и полностью открытый проект (лицензия MIT)**, созданный специально для комфортной повседневной работы на Windows 10 и 11 с удаленными серверами Linux, VPS/VDS, облаками (AWS, Hetzner, DigitalOcean) и домашними серверами (HomeLab).
+**BesTTY на 100% бесплатный проект с открытым исходным кодом (лицензия MIT с условием некоммерческого использования и защиты авторства)**, созданный специально для комфортной повседневной работы на Windows 10 и 11 с удаленными серверами Linux, VPS/VDS, облаками (AWS, Hetzner, DigitalOcean) и домашними серверами (HomeLab).
 
 ### 🛠️ Ключевые возможности:
 
@@ -163,7 +163,7 @@ BesTTY aims to support developers and sysadmins across the globe. You can easily
 
 Այլ ծրագրերը կամ ունեն 2000-ականների հնացած ինտերֆեյս (PuTTY, MobaXterm), կամ հիմնական գործառույթների համար պահանջում են ամսական թանկ բաժանորդագրություն (Termius, $12+/ամիս):
 
-**BesTTY-ն 100% անվճար է և բաց կոդով (MIT լիցենզիա)**, ստեղծված հատուկ Windows 10 և 11 օգտատերերի համար՝ Linux սերվերների, VPS/VDS-ների, ամպային ծառայությունների (AWS, Hetzner, DigitalOcean) և տնային սերվերների (HomeLab) հետ առավելագույնս հարմարավետ աշխատելու նպատակով:
+**BesTTY-ն 100% անվճար է և բաց կոդով (MIT լիցենզիա՝ ոչ առևտրային օգտագործման և հեղինակային իրավունքների պաշտպանության պայմանով)**, ստեղծված հատուկ Windows 10 և 11 օգտատերերի համար՝ Linux սերվերների, VPS/VDS-ների, ամպային ծառայությունների (AWS, Hetzner, DigitalOcean) և տնային սերվերների (HomeLab) հետ առավելագույնս հարմարավետ աշխատելու նպատակով:
 
 ### 🛠️ Հիմնական առանձնահատկությունները՝
 
@@ -255,7 +255,10 @@ npm run dist
 
 ---
 
-## 📜 License
+## 📜 License & Anti-Plagiarism Protection
 
-This project is licensed under the **MIT License** — completely free for personal and commercial use.
-Contributions and Pull Requests are warmly welcome!
+This project is licensed under the **MIT License with Non-Commercial & Author Protection Conditions** — completely free for personal and community use.
+
+- **Non-Commercial**: Commercial resale, repackaging for profit, and collecting donations/sponsorships by third-party forks or clones are strictly prohibited without the express written permission of Bazma Dev.
+- **Cryptographic Provenance**: The application features a cryptographically anchored update engine tied to the official [bazmadev/BesTTY](https://github.com/bazmadev/BesTTY) repository. Derivative works or forks will automatically check against official releases and update to authentic versions, preserving author donation channels and credits.
+- **Contributions & Translations**: Pull Requests, bug reports, and translations are warmly welcome!

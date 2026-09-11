@@ -187,4 +187,8 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('updater:status', handler);
     },
   },
+
+  integrity: {
+    verify: () => ipcRenderer.invoke('integrity:verify'),
+  },
 });

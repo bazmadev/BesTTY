@@ -105,6 +105,9 @@ declare global {
         install: () => Promise<void>;
         onStatus: (callback: (state: UpdateState) => void) => () => void;
       };
+      integrity: {
+        verify: () => Promise<{ valid: boolean; author: string; repo: string }>;
+      };
     };
   }
 }

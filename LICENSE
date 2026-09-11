@@ -1,6 +1,6 @@
-MIT License
+MIT License (with Non-Commercial & Anti-Fork-Monetization Condition)
 
-Copyright (c) 2026 Bazma Dev (https://t.me/bazmadev)
+Copyright (c) 2026 Bazma Dev (https://t.me/bazmadev, https://github.com/bazmadev/BesTTY)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,29 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. NON-COMMERCIAL & NO THIRD-PARTY SOLICITATION:
+   The Software and any of its derivative works, forks, or repackaged versions 
+   may NOT be sold, resold, sublicensed, or distributed for commercial profit 
+   or direct financial gain by third parties without the express, prior written 
+   consent of the original copyright holder (Bazma Dev).
+   
+   Third-party forks, clones, or redistributed binaries are STRICTLY PROHIBITED 
+   from soliciting donations, collecting tips/sponsorships, inserting third-party 
+   fundraising or payment widgets, charging subscription fees, or generating 
+   advertising revenue.
+
+2. PRESERVATION OF AUTHORSHIP & OFFICIAL CHANNELS:
+   The above copyright notice, this permission notice, the original author 
+   attribution (Bazma Dev), and links to the official author communication channels 
+   (https://t.me/bazmadev, https://github.com/bazmadev/BesTTY) MUST be preserved 
+   unaltered in all copies, forks, derivative works, or substantial portions 
+   of the Software, both in the source code and visibly in any accompanying user 
+   interface (including the "About / Credits" section).
+
+3. NO MISREPRESENTATION:
+   No person or organization may misrepresent any fork, derivative build, or 
+   repackaging of the Software as an official release, nor deceive end users 
+   regarding the original provenance or identity of the Software's creator.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

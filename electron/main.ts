@@ -9,6 +9,7 @@ import { MonitorService } from './ssh/MonitorService';
 import { TunnelManager } from './ssh/TunnelManager';
 import { AutoUpdaterManager } from './updater/AutoUpdaterManager';
 import { LocalFSManager } from './fs/LocalFSManager';
+import { AppIntegrity } from './security/AppIntegrity';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -350,9 +351,20 @@ function registerIpcHandlers() {
   ipcMain.handle('updater:install', () => {
     autoUpdaterManager.quitAndInstall();
   });
+
+  // Security & Provenance
+  ipcMain.handle('integrity:verify', () => {
+    return AppIntegrity.verifyIntegrity();
+  });
 }
 
 app.whenReady().then(async () => {
+  // Cryptographic provenance check
+  const integrity = AppIntegrity.verifyIntegrity();
+  if (!integrity.valid) {
+    console.warn('[Security] BesTTY provenance integrity check failed. Restoring author defaults.');
+  }
+
   // Allow external widgets (e.g. YooMoney fundraise widget) to be framed securely
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = { ...details.responseHeaders };

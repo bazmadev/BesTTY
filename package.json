@@ -82,7 +82,8 @@
     "publish": {
       "provider": "github",
       "owner": "bazmadev",
-      "repo": "BesTTY"
+      "repo": "BesTTY",
+      "releaseType": "release"
     },
     "win": {
       "icon": "public/icon.ico",
