@@ -10,6 +10,7 @@ import { SftpView } from './SftpView';
 import { MonitorView } from './MonitorView';
 import { LocalFilesView } from './LocalFilesView';
 import { MonacoEditorView } from './MonacoEditorView';
+import { SplitPaneDivider } from './split/SplitPaneDivider';
 
 export interface SplitContainerProps {
   splitMode: SplitLayoutMode;
@@ -32,6 +33,7 @@ export interface SplitContainerProps {
   onNewConnection?: (type: TabType) => void;
   onReconnectSession?: (sessionId: string, host: HostProfile) => Promise<void>;
   onClosePane?: (paneIndex: number) => void;
+  onSwapPanes?: (indexA: number, indexB: number) => void;
 }
 
 export const SplitContainer: React.FC<SplitContainerProps> = React.memo(({
@@ -55,6 +57,7 @@ export const SplitContainer: React.FC<SplitContainerProps> = React.memo(({
   onNewConnection,
   onReconnectSession,
   onClosePane,
+  onSwapPanes,
 }) => {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -171,6 +174,24 @@ export const SplitContainer: React.FC<SplitContainerProps> = React.memo(({
     }, 50);
   };
 
+  const handleSwap = (indexA: number, indexB: number) => {
+    setPaneWidths((prev) => {
+      if (prev.length <= Math.max(indexA, indexB)) return prev;
+      const next = [...prev];
+      const temp = next[indexA];
+      next[indexA] = next[indexB];
+      next[indexB] = temp;
+      return next;
+    });
+
+    if (onSwapPanes) {
+      onSwapPanes(indexA, indexB);
+    }
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
+  };
+
   const handleClosePane = (paneIndex: number) => {
     if (onClosePane) {
       onClosePane(paneIndex);
@@ -239,6 +260,7 @@ export const SplitContainer: React.FC<SplitContainerProps> = React.memo(({
         <LocalFilesView
           isLight={isLight}
           folderClickMode={settings?.folderClickMode || 'double'}
+          activeSessions={activeSessions}
           onOpenFileInEditor={(filePath, fileName) => {
             const firstSessionId = Array.from(activeSessions.keys())[0];
             if (firstSessionId) {
@@ -326,6 +348,7 @@ export const SplitContainer: React.FC<SplitContainerProps> = React.memo(({
           initialPath={tab.initialPath || activeSessions.get(tab.sessionId)?.defaultPath || '/'}
           onOpenFileInEditor={(filePath, fileName) => onOpenFileInEditor(tab.sessionId!, filePath, fileName)}
           onNavigateToTerminal={(folderPath, shouldSwitch) => onNavigateToTerminal(tab.sessionId!, folderPath, shouldSwitch)}
+          hasTerminalPane={tab.panes?.some((p) => p.viewType === 'terminal')}
         />
       );
     }
@@ -630,19 +653,15 @@ export const SplitContainer: React.FC<SplitContainerProps> = React.memo(({
 
             {/* Draggable Vertical Splitter Divider between panes */}
             {idx < paneCount - 1 && maximizedPaneIndex === null && (
-              <div
-                onMouseDown={(e) => handleStartResize(idx, e)}
-                onDoubleClick={handleResetWidths}
-                className={`w-1.5 relative cursor-col-resize shrink-0 group transition-colors select-none ${
-                  isLight
-                    ? 'bg-[#d8d8d8] hover:bg-sky-500 active:bg-sky-600'
-                    : 'bg-[#2b2b2b] hover:bg-sky-500 active:bg-sky-600'
-                }`}
-                title="Double click to reset equal widths"
-              >
-                {/* Visual grab accent */}
-                <div className="absolute inset-y-0 -left-1 -right-1 z-30" />
-              </div>
+              <SplitPaneDivider
+                dividerIndex={idx}
+                isLight={isLight}
+                onStartResize={handleStartResize}
+                onResetWidths={handleResetWidths}
+                onSwapPanes={handleSwap}
+                tooltipSwap={t('split.swapPanes') || 'Поменять окна местами'}
+                tooltipReset="Двойной клик — сброс ширины поровну"
+              />
             )}
           </React.Fragment>
         );

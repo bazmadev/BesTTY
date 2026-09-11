@@ -49,6 +49,26 @@ export interface FileClipboardState {
   files: string[];
 }
 
+export interface TransferBatchItem {
+  sourcePath: string;
+  destPath: string;
+  isDirectory?: boolean;
+}
+
+export interface TransferProgressPayload {
+  transferId: string;
+  type: 'upload' | 'download';
+  status: 'starting' | 'progress' | 'completed' | 'error';
+  currentFile: string;
+  fileIndex: number;
+  totalFiles: number;
+  bytesTransferred: number;
+  totalBytes: number;
+  speedBytesPerSec: number;
+  error?: string;
+}
+
+
 export interface TabItem {
   id: string;
   type: TabType;

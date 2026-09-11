@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { useTranslation } from '../i18n';
 import { sanitizeRemotePath, formatCdCommand } from '../utils/pathUtils';
+import { emboldenPrompt } from '../utils/terminalUtils';
 import { 
   FolderTree, Activity, Search, X, Broom, RefreshCw,
   RotateCw, ArrowLeftRight, Code, ChevronDown, Play, AlertCircle,
@@ -241,6 +242,73 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
   // Path copied indicator
   const [isPathCopied, setIsPathCopied] = useState(false);
 
+  // Terminal Font Size & Zoom State
+  const [fontSize, setFontSize] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('bestty_terminal_fontsize');
+      if (saved) {
+        const n = parseInt(saved, 10);
+        if (!isNaN(n) && n >= 9 && n <= 32) return n;
+      }
+    } catch {}
+    return 13;
+  });
+
+  const handleZoomIn = useCallback(() => {
+    setFontSize((prev) => {
+      const next = Math.min(prev + 1, 28);
+      try {
+        localStorage.setItem('bestty_terminal_fontsize', String(next));
+      } catch {}
+      if (xtermInstance.current) {
+        xtermInstance.current.options.fontSize = next;
+        try {
+          fitAddonRef.current?.fit();
+          if (xtermInstance.current.cols > 10 && xtermInstance.current.rows > 4 && window.api?.ssh) {
+            window.api.ssh.resize(sessionId, xtermInstance.current.cols, xtermInstance.current.rows);
+          }
+        } catch {}
+      }
+      return next;
+    });
+  }, [sessionId]);
+
+  const handleZoomOut = useCallback(() => {
+    setFontSize((prev) => {
+      const next = Math.max(prev - 1, 9);
+      try {
+        localStorage.setItem('bestty_terminal_fontsize', String(next));
+      } catch {}
+      if (xtermInstance.current) {
+        xtermInstance.current.options.fontSize = next;
+        try {
+          fitAddonRef.current?.fit();
+          if (xtermInstance.current.cols > 10 && xtermInstance.current.rows > 4 && window.api?.ssh) {
+            window.api.ssh.resize(sessionId, xtermInstance.current.cols, xtermInstance.current.rows);
+          }
+        } catch {}
+      }
+      return next;
+    });
+  }, [sessionId]);
+
+  const handleResetZoom = useCallback(() => {
+    const next = 13;
+    setFontSize(next);
+    try {
+      localStorage.setItem('bestty_terminal_fontsize', String(next));
+    } catch {}
+    if (xtermInstance.current) {
+      xtermInstance.current.options.fontSize = next;
+      try {
+        fitAddonRef.current?.fit();
+        if (xtermInstance.current.cols > 10 && xtermInstance.current.rows > 4 && window.api?.ssh) {
+          window.api.ssh.resize(sessionId, xtermInstance.current.cols, xtermInstance.current.rows);
+        }
+      } catch {}
+    }
+  }, [sessionId]);
+
   // Directory Sync Configuration
   const [syncConfig, setSyncConfig] = useState<DirectorySyncConfig>(() => {
     try {
@@ -428,7 +496,7 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     const term = new XTerm({
       cursorBlink: true,
       cursorStyle: 'bar',
-      fontSize: 13,
+      fontSize: fontSize,
       fontFamily: "Consolas, 'Cascadia Code', 'Fira Code', Menlo, 'Courier New', monospace",
       theme: isLightRef.current ? LIGHT_TERMINAL_THEME : DARK_TERMINAL_THEME,
       allowTransparency: true,
@@ -606,7 +674,7 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     // Subscribe to SSH stream output
     const unsubscribeData = window.api?.ssh.onData((payload) => {
       if (payload.sessionId === sessionId) {
-        term.write(payload.data);
+        term.write(emboldenPrompt(payload.data));
       }
     });
 
@@ -911,6 +979,10 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     const cdCmd = formatCdCommand(clean);
     handleSendCommand(cdCmd.endsWith('\n') ? cdCmd : `${cdCmd}\n`);
     setCurrentDirectory(clean);
+    try {
+      sessionStorage.setItem('bestty_last_sftp_path', clean);
+      window.dispatchEvent(new CustomEvent('bestty_sftp_path_changed', { detail: { path: clean } }));
+    } catch {}
   };
 
   const handleNavigateUp = () => {
@@ -937,7 +1009,9 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       try {
         for (const file of Array.from(e.dataTransfer.files)) {
-          const localPath = (file as any).path;
+          const localPath = (window.api && (window.api as any).getPathForFile)
+            ? (window.api as any).getPathForFile(file)
+            : ((file as any).path || '');
           if (!localPath) continue;
           const fileName = file.name || localPath.split(/[\\/]/).pop();
           const remoteDest = targetDir.endsWith('/') ? `${targetDir}${fileName}` : `${targetDir}/${fileName}`;
@@ -994,7 +1068,7 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
   };
 
   return (
-    <div className={`flex-1 flex flex-col h-full overflow-hidden relative ${
+    <div className={`flex-1 flex flex-col w-full h-full overflow-hidden relative ${
       isLight ? 'bg-[#fafafa] text-slate-800' : 'bg-[#181818] text-slate-100'
     }`}>
       {/* Main Split Layout: Left Panel + Center Terminal + Right Panel */}
@@ -1345,8 +1419,20 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
         onUpdateSyncConfig={updateSyncConfig}
         onNavigateBreadcrumb={handleNavigateBreadcrumb}
         onNavigateUp={handleNavigateUp}
-        onOpenInSftp={() => onOpenSftp(currentDirectory)}
+        onOpenInSftp={() => {
+          const clean = sanitizeRemotePath(currentDirectory || '/');
+          try {
+            sessionStorage.setItem('bestty_last_sftp_path', clean);
+            window.dispatchEvent(new CustomEvent('bestty_sftp_path_changed', { detail: { path: clean } }));
+          } catch {}
+          onOpenSftp(clean);
+        }}
         onCopyPath={handleCopyPath}
+        onPaste={handlePasteFromClipboard}
+        fontSize={fontSize}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onResetZoom={handleResetZoom}
         isPathCopied={isPathCopied}
         t={t}
       />

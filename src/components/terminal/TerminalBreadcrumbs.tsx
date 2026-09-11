@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Folder, ChevronRight, CornerLeftUp, FolderTree, ArrowLeftRight, Check, Clipboard, RotateCw 
+  Folder, ChevronRight, CornerLeftUp, FolderTree, ArrowLeftRight, Check, Clipboard, RotateCw,
+  Plus, Minus, ClipboardPaste
 } from 'lucide-react';
 import { SFTPFile, DirectorySyncConfig } from '../../types';
 import { sanitizeRemotePath } from '../../utils/pathUtils';
@@ -15,6 +16,11 @@ interface TerminalBreadcrumbsProps {
   onNavigateUp: () => void;
   onOpenInSftp: () => void;
   onCopyPath: () => void;
+  onPaste?: () => void;
+  fontSize?: number;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onResetZoom?: () => void;
   isPathCopied: boolean;
   t: (key: string) => string;
 }
@@ -29,6 +35,11 @@ export const TerminalBreadcrumbs: React.FC<TerminalBreadcrumbsProps> = React.mem
   onNavigateUp,
   onOpenInSftp,
   onCopyPath,
+  onPaste,
+  fontSize = 13,
+  onZoomIn,
+  onZoomOut,
+  onResetZoom,
   isPathCopied,
   t,
 }) => {
@@ -50,7 +61,12 @@ export const TerminalBreadcrumbs: React.FC<TerminalBreadcrumbsProps> = React.mem
   const subfolderCacheRef = useRef<Record<string, SFTPFile[]>>({});
 
   useEffect(() => {
+    const handleRefreshed = () => {
+      subfolderCacheRef.current = {};
+    };
+    window.addEventListener('bestty_sftp_refreshed', handleRefreshed);
     return () => {
+      window.removeEventListener('bestty_sftp_refreshed', handleRefreshed);
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     };
@@ -222,8 +238,23 @@ export const TerminalBreadcrumbs: React.FC<TerminalBreadcrumbsProps> = React.mem
           })}
       </div>
 
-      {/* Right: Path utilities & Sync settings */}
+      {/* Right: Path utilities, Paste, Zoom & Sync settings */}
       <div className="flex items-center space-x-1 flex-shrink-0">
+        {/* Paste to Terminal */}
+        {onPaste && (
+          <button
+            onClick={onPaste}
+            className={`p-1 rounded text-[11px] transition-colors flex items-center space-x-1 ${
+              isLight
+                ? 'text-slate-600 hover:text-sky-600 hover:bg-slate-200'
+                : 'text-slate-400 hover:text-sky-400 hover:bg-white/10'
+            }`}
+            title={t('terminal.paste') || 'Вставить из буфера в терминал'}
+          >
+            <ClipboardPaste className="w-3 h-3" />
+          </button>
+        )}
+
         {/* Copy Path */}
         <button
           onClick={onCopyPath}
@@ -265,6 +296,48 @@ export const TerminalBreadcrumbs: React.FC<TerminalBreadcrumbsProps> = React.mem
         >
           <FolderTree className="w-3 h-3" />
         </button>
+
+        {/* Zoom Controls: Minus, Font size, Plus */}
+        {onZoomOut && onZoomIn && (
+          <>
+            <div className="h-3 w-px bg-slate-500/20 mx-0.5" />
+            <div className="flex items-center space-x-0.5">
+              <button
+                onClick={onZoomOut}
+                className={`p-1 rounded text-[11px] transition-colors ${
+                  isLight
+                    ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/10'
+                }`}
+                title={t('terminal.zoomOut') || 'Уменьшить шрифт (-)'}
+              >
+                <Minus className="w-3 h-3" />
+              </button>
+              <button
+                onClick={onResetZoom}
+                className={`px-1 text-[10px] font-mono font-medium transition-colors select-none ${
+                  isLight
+                    ? 'text-slate-500 hover:text-sky-600 hover:bg-slate-200/60 rounded'
+                    : 'text-slate-400 hover:text-sky-400 hover:bg-white/5 rounded'
+                }`}
+                title={t('terminal.resetZoom') || 'Сбросить масштаб шрифта (13px)'}
+              >
+                {fontSize}
+              </button>
+              <button
+                onClick={onZoomIn}
+                className={`p-1 rounded text-[11px] transition-colors ${
+                  isLight
+                    ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/10'
+                }`}
+                title={t('terminal.zoomIn') || 'Увеличить шрифт (+)'}
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </div>
+          </>
+        )}
 
         <div className="h-3 w-px bg-slate-500/20 mx-0.5" />
 

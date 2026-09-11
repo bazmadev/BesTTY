@@ -1,8 +1,9 @@
-import { HostProfile, Snippet, TunnelConfig, BesTTYSettings, SFTPFile, ServerMetrics, RemoteProcess, VaultStatus, UpdateState, LocalDrive, VaultProtectionMode } from './index';
+import { HostProfile, Snippet, TunnelConfig, BesTTYSettings, SFTPFile, ServerMetrics, RemoteProcess, VaultStatus, UpdateState, LocalDrive, VaultProtectionMode, TransferProgressPayload } from './index';
 
 declare global {
   interface Window {
     api: {
+      getPathForFile?: (file: File) => string;
       vault: {
         getStatus: () => Promise<VaultStatus>;
         unlock: (password: string) => Promise<boolean>;
@@ -46,18 +47,27 @@ declare global {
         writeFile: (sessionId: string, remotePath: string, content: string) => Promise<void>;
         sudoWriteFile: (sessionId: string, remotePath: string, content: string, sudoPassword?: string) => Promise<void>;
         mkdir: (sessionId: string, remotePath: string) => Promise<void>;
-        delete: (sessionId: string, remotePath: string, isDirectory: boolean) => Promise<void>;
+        delete: (sessionId: string, remotePath: string, isDirectory?: boolean) => Promise<void>;
+        deleteBatch: (sessionId: string, paths: string[]) => Promise<void>;
         rename: (sessionId: string, oldPath: string, newPath: string) => Promise<void>;
         chmod: (sessionId: string, remotePath: string, mode: number) => Promise<void>;
         copyFile: (sessionId: string, srcPath: string, destPath: string) => Promise<void>;
         uploadFile: (sessionId: string, localPath: string, remotePath: string) => Promise<void>;
         downloadFile: (sessionId: string, remotePath: string, localPath: string) => Promise<void>;
+        uploadBatch: (
+          sessionId: string,
+          items: Array<{ localPath: string; remoteDest: string }>,
+          conflictPolicy?: 'overwrite' | 'skip' | 'rename'
+        ) => Promise<{ success: boolean; errors: string[] }>;
+        downloadBatch: (sessionId: string, items: Array<{ remotePath: string; localDest: string }>) => Promise<{ success: boolean; errors: string[] }>;
+        onTransferProgress: (callback: (payload: TransferProgressPayload) => void) => () => void;
       };
       local: {
         list: (dirPath?: string) => Promise<{ currentPath: string; files: SFTPFile[]; drives: LocalDrive[] }>;
         getDrives: () => Promise<LocalDrive[]>;
         mkdir: (dirPath: string) => Promise<void>;
         delete: (targetPath: string) => Promise<void>;
+        deleteBatch: (paths: string[]) => Promise<void>;
         rename: (oldPath: string, newPath: string) => Promise<void>;
         copy: (srcPath: string, destPath: string) => Promise<void>;
         readFile: (targetPath: string) => Promise<string>;
@@ -82,6 +92,7 @@ declare global {
       };
       dialog: {
         openKeyFile: () => Promise<string | null>;
+        selectFolder: () => Promise<string | null>;
       };
       clipboard: {
         readText: () => Promise<string>;

@@ -49,6 +49,7 @@ sshManager.on('closed', (payload) => {
 
 sshManager.on('directory-changed', (payload) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('ssh:directoryChanged', payload);
     mainWindow.webContents.send('ssh:directory-changed', payload);
   }
 });
@@ -226,6 +227,9 @@ function registerIpcHandlers() {
   ipcMain.handle('sftp:delete', async (_, sessionId, remotePath, isDirectory) => {
     return sftpManager.deleteFile(sessionId, remotePath, isDirectory);
   });
+  ipcMain.handle('sftp:deleteBatch', async (_, sessionId, paths) => {
+    return sftpManager.deleteBatch(sessionId, paths);
+  });
   ipcMain.handle('sftp:rename', async (_, sessionId, oldPath, newPath) => {
     return sftpManager.rename(sessionId, oldPath, newPath);
   });
@@ -241,6 +245,16 @@ function registerIpcHandlers() {
   ipcMain.handle('sftp:downloadFile', async (_, sessionId, remotePath, localPath) => {
     return sftpManager.downloadFile(sessionId, remotePath, localPath);
   });
+  ipcMain.handle('sftp:uploadBatch', async (event, sessionId, items, conflictPolicy) => {
+    return sftpManager.uploadBatch(sessionId, items, conflictPolicy, (payload) => {
+      event.sender.send('transfer:progress', payload);
+    });
+  });
+  ipcMain.handle('sftp:downloadBatch', async (event, sessionId, items) => {
+    return sftpManager.downloadBatch(sessionId, items, (payload) => {
+      event.sender.send('transfer:progress', payload);
+    });
+  });
 
   // Local Files
   ipcMain.handle('local:list', async (_, dirPath) => {
@@ -254,6 +268,9 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('local:delete', async (_, targetPath) => {
     return localFSManager.deleteFile(targetPath);
+  });
+  ipcMain.handle('local:deleteBatch', async (_, paths) => {
+    return localFSManager.deleteBatch(paths);
   });
   ipcMain.handle('local:rename', async (_, oldPath, newPath) => {
     return localFSManager.renameFile(oldPath, newPath);
@@ -301,6 +318,18 @@ function registerIpcHandlers() {
         { name: 'PuTTY Private Keys (*.ppk)', extensions: ['ppk'] },
         { name: 'OpenSSH / PEM Keys (*.pem, *.key, id_*)', extensions: ['pem', 'key', 'id_rsa', 'id_ed25519'] },
       ],
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+    return null;
+  });
+
+  ipcMain.handle('dialog:selectFolder', async () => {
+    if (!mainWindow) return null;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Destination Folder',
+      properties: ['openDirectory', 'createDirectory'],
     });
     if (!result.canceled && result.filePaths.length > 0) {
       return result.filePaths[0];

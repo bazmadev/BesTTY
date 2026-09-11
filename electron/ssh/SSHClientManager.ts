@@ -404,6 +404,7 @@ export class SSHClientManager extends EventEmitter {
             env: {
               LANG: 'en_US.UTF-8',
               LC_ALL: 'en_US.UTF-8',
+              HISTCONTROL: 'ignoreboth',
             },
           },
           (err, stream) => {

@@ -1,7 +1,8 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { HostProfile, Snippet, TunnelConfig, BesTTYSettings, SFTPFile, ServerMetrics, RemoteProcess } from '../src/types';
 
 contextBridge.exposeInMainWorld('api', {
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
   vault: {
     getStatus: () => ipcRenderer.invoke('vault:getStatus'),
     unlock: (password: string) => ipcRenderer.invoke('vault:unlock', password),
@@ -36,36 +37,46 @@ contextBridge.exposeInMainWorld('api', {
   ssh: {
     connect: (sessionId: string, host: HostProfile, cols: number, rows: number) =>
       ipcRenderer.invoke('ssh:connect', sessionId, host, cols, rows),
+    testConnection: (host: HostProfile) =>
+      ipcRenderer.invoke('ssh:testConnection', host),
     write: (sessionId: string, data: string) =>
       ipcRenderer.invoke('ssh:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) =>
       ipcRenderer.invoke('ssh:resize', sessionId, cols, rows),
     disconnect: (sessionId: string) =>
       ipcRenderer.invoke('ssh:disconnect', sessionId),
-    testConnection: (host: HostProfile) =>
-      ipcRenderer.invoke('ssh:testConnection', host),
+    getCurrentDirectory: (sessionId: string) =>
+      ipcRenderer.invoke('ssh:getCurrentDirectory', sessionId),
     onData: (callback: (payload: { sessionId: string; data: string }) => void) => {
       const handler = (_: any, payload: any) => callback(payload);
       ipcRenderer.on('ssh:data', handler);
-      return () => ipcRenderer.removeListener('ssh:data', handler);
+      return () => {
+        ipcRenderer.removeListener('ssh:data', handler);
+      };
     },
     onClosed: (callback: (payload: { sessionId: string }) => void) => {
       const handler = (_: any, payload: any) => callback(payload);
       ipcRenderer.on('ssh:closed', handler);
-      return () => ipcRenderer.removeListener('ssh:closed', handler);
+      return () => {
+        ipcRenderer.removeListener('ssh:closed', handler);
+      };
     },
     onError: (callback: (payload: { sessionId: string; error: string }) => void) => {
       const handler = (_: any, payload: any) => callback(payload);
       ipcRenderer.on('ssh:error', handler);
-      return () => ipcRenderer.removeListener('ssh:error', handler);
+      return () => {
+        ipcRenderer.removeListener('ssh:error', handler);
+      };
     },
     onDirectoryChanged: (callback: (payload: { sessionId: string; directory: string }) => void) => {
       const handler = (_: any, payload: any) => callback(payload);
+      ipcRenderer.on('ssh:directoryChanged', handler);
       ipcRenderer.on('ssh:directory-changed', handler);
-      return () => ipcRenderer.removeListener('ssh:directory-changed', handler);
+      return () => {
+        ipcRenderer.removeListener('ssh:directoryChanged', handler);
+        ipcRenderer.removeListener('ssh:directory-changed', handler);
+      };
     },
-    getCurrentDirectory: (sessionId: string) =>
-      ipcRenderer.invoke('ssh:getCurrentDirectory', sessionId),
   },
 
   sftp: {
@@ -79,8 +90,10 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('sftp:sudoWriteFile', sessionId, remotePath, content, sudoPassword),
     mkdir: (sessionId: string, remotePath: string) =>
       ipcRenderer.invoke('sftp:mkdir', sessionId, remotePath),
-    delete: (sessionId: string, remotePath: string, isDirectory: boolean) =>
+    delete: (sessionId: string, remotePath: string, isDirectory?: boolean) =>
       ipcRenderer.invoke('sftp:delete', sessionId, remotePath, isDirectory),
+    deleteBatch: (sessionId: string, paths: string[]) =>
+      ipcRenderer.invoke('sftp:deleteBatch', sessionId, paths),
     rename: (sessionId: string, oldPath: string, newPath: string) =>
       ipcRenderer.invoke('sftp:rename', sessionId, oldPath, newPath),
     chmod: (sessionId: string, remotePath: string, mode: number) =>
@@ -91,6 +104,20 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('sftp:uploadFile', sessionId, localPath, remotePath),
     downloadFile: (sessionId: string, remotePath: string, localPath: string) =>
       ipcRenderer.invoke('sftp:downloadFile', sessionId, remotePath, localPath),
+    uploadBatch: (
+      sessionId: string,
+      items: Array<{ localPath: string; remoteDest: string }>,
+      conflictPolicy?: 'overwrite' | 'skip' | 'rename'
+    ) => ipcRenderer.invoke('sftp:uploadBatch', sessionId, items, conflictPolicy),
+    downloadBatch: (sessionId: string, items: Array<{ remotePath: string; localDest: string }>) =>
+      ipcRenderer.invoke('sftp:downloadBatch', sessionId, items),
+    onTransferProgress: (callback: (payload: any) => void) => {
+      const handler = (_: any, payload: any) => callback(payload);
+      ipcRenderer.on('transfer:progress', handler);
+      return () => {
+        ipcRenderer.removeListener('transfer:progress', handler);
+      };
+    },
   },
 
   local: {
@@ -102,6 +129,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('local:mkdir', dirPath),
     delete: (targetPath: string) =>
       ipcRenderer.invoke('local:delete', targetPath),
+    deleteBatch: (paths: string[]) =>
+      ipcRenderer.invoke('local:deleteBatch', paths),
     rename: (oldPath: string, newPath: string) =>
       ipcRenderer.invoke('local:rename', oldPath, newPath),
     copy: (srcPath: string, destPath: string) =>
@@ -139,6 +168,7 @@ contextBridge.exposeInMainWorld('api', {
 
   dialog: {
     openKeyFile: () => ipcRenderer.invoke('dialog:openKeyFile'),
+    selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
   },
 
   clipboard: {

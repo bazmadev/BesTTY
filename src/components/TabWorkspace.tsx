@@ -7,6 +7,7 @@ import { TerminalView } from './TerminalView';
 import { SftpView } from './SftpView';
 import { MonacoEditorView } from './MonacoEditorView';
 import { MonitorView } from './MonitorView';
+import { LocalFilesView } from './LocalFilesView';
 import { SplitContainer } from './SplitContainer';
 
 export interface TabWorkspaceProps {
@@ -30,6 +31,7 @@ export interface TabWorkspaceProps {
   onChangePane: (paneIndex: number, newConfig: PaneConfig, tabId: string) => void;
   onSetSplitMode: (mode: SplitLayoutMode, tabIdTarget?: string) => void;
   onRemovePane: (paneIndex: number, tabId: string) => void;
+  onSwapPanes?: (indexA: number, indexB: number, tabId: string) => void;
   onTabModifiedChange: (tabId: string, isModified: boolean) => void;
 }
 
@@ -54,6 +56,7 @@ export const TabWorkspace: React.FC<TabWorkspaceProps> = React.memo(({
   onChangePane,
   onSetSplitMode,
   onRemovePane,
+  onSwapPanes,
   onTabModifiedChange,
 }) => {
   const isSplit = Boolean(tab.splitMode && tab.splitMode !== 'single');
@@ -63,7 +66,7 @@ export const TabWorkspace: React.FC<TabWorkspaceProps> = React.memo(({
 
   return (
     <div
-      className="w-full h-full"
+      className="w-full h-full flex-shrink-0"
       style={{ display: isTabActive ? 'flex' : 'none' }}
     >
       {isSplit ? (
@@ -80,6 +83,7 @@ export const TabWorkspace: React.FC<TabWorkspaceProps> = React.memo(({
           onChangePane={(idx, cfg) => onChangePane(idx, cfg, tab.id)}
           onSetSplitMode={(mode) => onSetSplitMode(mode, tab.id)}
           onClosePane={(idx) => onRemovePane(idx, tab.id)}
+          onSwapPanes={(idxA, idxB) => onSwapPanes?.(idxA, idxB, tab.id)}
           tabs={tabs}
           activeSessions={activeSessions}
           hosts={hosts}
@@ -113,18 +117,31 @@ export const TabWorkspace: React.FC<TabWorkspaceProps> = React.memo(({
           folderClickMode={settings.folderClickMode || 'double'}
           onReconnectSession={onReconnectSession}
         />
-      ) : tab.type === 'sftp' && tab.sessionId ? (
+      ) : tab.type === 'sftp' && (tab.sessionId || activeSessions.size > 0) ? (
         <SftpView
-          sessionId={tab.sessionId}
+          sessionId={tab.sessionId || Array.from(activeSessions.keys())[0] || ''}
           isLight={isLight}
           folderClickMode={settings.folderClickMode || 'double'}
           initialPath={tab.initialPath || sessionHost?.defaultPath || '/'}
           onOpenFileInEditor={(filePath, fileName) =>
-            onOpenFileInEditor(tab.sessionId!, filePath, fileName)
+            onOpenFileInEditor(tab.sessionId || Array.from(activeSessions.keys())[0] || '', filePath, fileName)
           }
           onNavigateToTerminal={(folderPath, shouldSwitch) =>
-            onNavigateToTerminal(tab.sessionId!, folderPath, shouldSwitch)
+            onNavigateToTerminal(tab.sessionId || Array.from(activeSessions.keys())[0] || '', folderPath, shouldSwitch)
           }
+          hasTerminalPane={false}
+        />
+      ) : tab.type === 'local' ? (
+        <LocalFilesView
+          isLight={isLight}
+          folderClickMode={settings.folderClickMode || 'double'}
+          activeSessions={activeSessions}
+          onOpenFileInEditor={(filePath, fileName) => {
+            const firstSessionId = Array.from(activeSessions.keys())[0];
+            if (firstSessionId) {
+              onOpenFileInEditor(firstSessionId, filePath, fileName);
+            }
+          }}
         />
       ) : tab.type === 'editor' && tab.sessionId && tab.filePath ? (
         <MonacoEditorView

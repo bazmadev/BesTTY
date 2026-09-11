@@ -50,7 +50,7 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ sessionId, isLight = f
   };
 
   return (
-    <div className={`flex-1 flex flex-col h-full overflow-y-auto p-6 select-none ${
+    <div className={`flex-1 flex flex-col w-full h-full overflow-y-auto p-6 select-none ${
       isLight ? 'bg-[#f5f5f5] text-slate-800' : 'bg-[#181818] text-slate-100'
     }`}>
       {/* Header */}

@@ -215,7 +215,7 @@ export const MonacoEditorView: React.FC<MonacoEditorViewProps> = ({
   }, []);
 
   return (
-    <div className={`flex-1 flex flex-col h-full overflow-hidden select-none ${
+    <div className={`flex-1 flex flex-col w-full h-full overflow-hidden select-none ${
       isLight ? 'bg-white text-slate-800' : 'bg-[#1e1e1e] text-slate-100'
     }`}>
       {/* Editor Header */}

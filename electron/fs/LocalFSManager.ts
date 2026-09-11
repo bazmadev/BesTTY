@@ -150,6 +150,16 @@ export class LocalFSManager {
     await fs.promises.rm(targetPath, { recursive: true, force: true });
   }
 
+  public async deleteBatch(paths: string[]): Promise<void> {
+    for (const targetPath of paths) {
+      try {
+        await fs.promises.rm(targetPath, { recursive: true, force: true });
+      } catch (err) {
+        console.error(`Failed to delete ${targetPath}:`, err);
+      }
+    }
+  }
+
   public async renameFile(oldPath: string, newPath: string): Promise<void> {
     await fs.promises.rename(oldPath, newPath);
   }

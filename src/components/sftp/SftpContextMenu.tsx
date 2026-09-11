@@ -12,6 +12,7 @@ import {
   FolderPlus,
   FilePlus,
   RotateCw,
+  DownloadCloud,
 } from 'lucide-react';
 
 export interface ContextMenuState {
@@ -24,9 +25,11 @@ interface SftpContextMenuProps {
   isLight?: boolean;
   menu: ContextMenuState;
   clipboard: FileClipboardState | null;
+  selectedCount?: number;
   onClose: () => void;
   onOpenFileInEditor?: (path: string, name: string) => void;
   onNavigateToTerminal?: (path: string) => void;
+  onDownload?: () => void;
   onCopyFile?: (file: SFTPFile) => void;
   onCutFile?: (file: SFTPFile) => void;
   onPaste?: (targetFolder: string) => void;
@@ -42,9 +45,11 @@ export const SftpContextMenu: React.FC<SftpContextMenuProps> = ({
   isLight = false,
   menu,
   clipboard,
+  selectedCount,
   onClose,
   onOpenFileInEditor,
   onNavigateToTerminal,
+  onDownload,
   onCopyFile,
   onCutFile,
   onPaste,
@@ -73,6 +78,24 @@ export const SftpContextMenu: React.FC<SftpContextMenuProps> = ({
     >
       {file ? (
         <>
+          {/* Download action */}
+          {onDownload && (
+            <button
+              onClick={() => {
+                onDownload();
+                onClose();
+              }}
+              className="w-full text-left px-3 py-1.5 hover:bg-emerald-500/15 hover:text-emerald-400 flex items-center space-x-2 transition-colors font-medium text-emerald-400"
+            >
+              <DownloadCloud className="w-3.5 h-3.5" />
+              <span>
+                {selectedCount && selectedCount > 1
+                  ? `${t('sftp.downloadSelected') || 'Скачать выбранное'} (${selectedCount})`
+                  : t('sftp.download') || 'Скачать'}
+              </span>
+            </button>
+          )}
+
           {/* File specific actions */}
           {!file.isDirectory && onOpenFileInEditor && (
             <button
@@ -109,7 +132,11 @@ export const SftpContextMenu: React.FC<SftpContextMenuProps> = ({
               className="w-full text-left px-3 py-1.5 hover:bg-sky-500/15 hover:text-sky-400 flex items-center space-x-2 transition-colors"
             >
               <Copy className="w-3.5 h-3.5 text-slate-400" />
-              <span>{t('sftp.copy')}</span>
+              <span>
+                {selectedCount && selectedCount > 1
+                  ? `${t('sftp.copy')} (${selectedCount})`
+                  : t('sftp.copy')}
+              </span>
             </button>
           )}
 
@@ -122,11 +149,15 @@ export const SftpContextMenu: React.FC<SftpContextMenuProps> = ({
               className="w-full text-left px-3 py-1.5 hover:bg-sky-500/15 hover:text-sky-400 flex items-center space-x-2 transition-colors"
             >
               <Scissors className="w-3.5 h-3.5 text-slate-400" />
-              <span>{t('sftp.cut')}</span>
+              <span>
+                {selectedCount && selectedCount > 1
+                  ? `${t('sftp.cut')} (${selectedCount})`
+                  : t('sftp.cut')}
+              </span>
             </button>
           )}
 
-          {onStartRename && (
+          {onStartRename && (!selectedCount || selectedCount <= 1) && (
             <button
               onClick={() => {
                 onStartRename(file);
@@ -148,7 +179,11 @@ export const SftpContextMenu: React.FC<SftpContextMenuProps> = ({
               className="w-full text-left px-3 py-1.5 hover:bg-rose-500/15 hover:text-rose-400 flex items-center space-x-2 transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-              <span>{t('sftp.delete')}</span>
+              <span>
+                {selectedCount && selectedCount > 1
+                  ? `${t('sftp.deleteSelected') || 'Удалить выбранное'} (${selectedCount})`
+                  : t('sftp.delete')}
+              </span>
             </button>
           )}
         </>

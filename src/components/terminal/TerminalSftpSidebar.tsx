@@ -296,13 +296,17 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
         // If copying in the same folder, add a copy suffix
         if (cb.action === 'copy' && src === dest) {
           const extIndex = fileName.lastIndexOf('.');
-          if (extIndex > 0) {
-            const namePart = fileName.slice(0, extIndex);
-            const extPart = fileName.slice(extIndex);
-            fileName = `${namePart} - Copy${extPart}`;
-          } else {
-            fileName = `${fileName} - Copy`;
+          const namePart = extIndex > 0 ? fileName.slice(0, extIndex) : fileName;
+          const extPart = extIndex > 0 ? fileName.slice(extIndex) : '';
+
+          let candidate = `${namePart} - Copy${extPart}`;
+          let counter = 2;
+          const existingNames = new Set(sidebarFiles.map((f: SFTPFile) => f.name));
+          while (existingNames.has(candidate)) {
+            candidate = `${namePart} - Copy (${counter})${extPart}`;
+            counter++;
           }
+          fileName = candidate;
           dest = targetFolder.endsWith('/')
             ? `${targetFolder}${fileName}`
             : `${targetFolder}/${fileName}`;
@@ -329,7 +333,7 @@ export const TerminalSftpSidebar: React.FC<TerminalSftpSidebarProps> = React.mem
       }
 
       showToast(`${t('sftp.paste')} (${cb.files.length})`, 'success');
-      loadSidebarDirectory(sftpPath);
+      await loadSidebarDirectory(sftpPath, true);
       window.dispatchEvent(new CustomEvent(EVENT_SFTP_REFRESHED));
     } catch (err: any) {
       showToast(`Paste failed: ${err.message}`, 'error');

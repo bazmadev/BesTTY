@@ -1,4 +1,6 @@
 import { SFTPWrapper } from 'ssh2';
+import * as fs from 'fs';
+import * as path from 'path';
 import { SSHClientManager } from './SSHClientManager';
 import { SFTPFile } from '../../src/types';
 
@@ -244,11 +246,28 @@ export class SFTPManager {
 
     const runExec = (cmd: string, inputData?: string): Promise<{ code: number; stdout: string; stderr: string }> => {
       return new Promise((resolve, reject) => {
+        let settled = false;
+        let exitCode: number | null = null;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            resolve({ code: exitCode ?? 0, stdout: '', stderr: 'Execution timeout' });
+          }
+        }, 15000);
+
         session.client.exec(cmd, { pty: false }, (err, stream) => {
-          if (err) return reject(err);
+          if (err) {
+            clearTimeout(timer);
+            settled = true;
+            return reject(err);
+          }
 
           let stdout = '';
           let stderr = '';
+
+          stream.on('exit', (c) => {
+            exitCode = c;
+          });
 
           stream.on('data', (d: Buffer) => {
             stdout += d.toString();
@@ -259,17 +278,26 @@ export class SFTPManager {
           });
 
           stream.on('close', (code: number) => {
-            resolve({ code, stdout, stderr });
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve({ code: exitCode ?? code ?? 0, stdout, stderr });
           });
 
           stream.on('error', (e: any) => {
-            reject(e);
+            if (!settled) {
+              settled = true;
+              clearTimeout(timer);
+              reject(e);
+            }
           });
 
           if (inputData !== undefined) {
             stream.write(inputData);
           }
           stream.end();
+          stream.resume();
+          stream.stderr.resume();
         });
       });
     };
@@ -326,46 +354,199 @@ export class SFTPManager {
     });
   }
 
-  public async deleteFile(sessionId: string, remotePath: string, isDirectory: boolean): Promise<void> {
+  public async deleteFile(sessionId: string, remotePath: string, isDirectory?: boolean): Promise<void> {
     const sftp = await this.getSFTP(sessionId);
     const session = this.sshManager.getSession(sessionId);
 
-    return new Promise((resolve, reject) => {
-      if (isDirectory) {
-        sftp.rmdir(remotePath, (err) => {
-          if (!err) {
-            this.invalidateCacheForPath(sessionId, remotePath);
-            return resolve();
-          }
-          // If rmdir fails (directory not empty), fallback to rm -rf via ssh client
-          if (session && session.client) {
-            const safePath = `'${remotePath.replace(/'/g, "'\\''")}'`;
-            session.client.exec(`rm -rf -- ${safePath}`, (execErr, stream) => {
-              if (execErr) return reject(err);
-              stream.on('close', (code: number) => {
-                if (code === 0) {
-                  this.invalidateCacheForPath(sessionId, remotePath);
-                  resolve();
-                } else {
-                  reject(new Error(`Delete directory failed with exit code ${code}`));
-                }
-              });
-              stream.on('error', (e: any) => reject(e));
-            });
-          } else {
-            reject(err);
-          }
-        });
-      } else {
-        sftp.unlink(remotePath, (err) => {
-          if (err) {
-            reject(err);
-          } else {
+    this.invalidateCacheForPath(sessionId, remotePath);
+
+    if (session && session.client) {
+      return new Promise<void>((resolve, reject) => {
+        const safePath = `'${remotePath.replace(/'/g, "'\\''")}'`;
+        const cmd = `rm -rf -- ${safePath}`;
+
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
             this.invalidateCacheForPath(sessionId, remotePath);
             resolve();
           }
+        }, 15000);
+
+        session.client.exec(cmd, (err, stream) => {
+          if (err) {
+            clearTimeout(timer);
+            settled = true;
+            return this.deleteViaSFTP(sftp, remotePath, isDirectory).then(resolve, reject);
+          }
+
+          let exitCode: number | null = null;
+          let stderrText = '';
+
+          stream.on('exit', (code) => {
+            exitCode = code;
+          });
+
+          stream.stderr.on('data', (chunk) => {
+            stderrText += chunk.toString();
+          });
+
+          stream.on('data', () => {}); // drain stdout
+
+          stream.on('close', () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            this.invalidateCacheForPath(sessionId, remotePath);
+
+            if (exitCode === 0 || exitCode === null) {
+              resolve();
+            } else {
+              if (stderrText.toLowerCase().includes('permission denied')) {
+                reject(new Error(stderrText.trim()));
+              } else {
+                this.deleteViaSFTP(sftp, remotePath, isDirectory).then(resolve, reject);
+              }
+            }
+          });
+
+          stream.on('error', () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            this.deleteViaSFTP(sftp, remotePath, isDirectory).then(resolve, reject);
+          });
+
+          stream.resume();
+          stream.stderr.resume();
         });
+      });
+    }
+
+    return this.deleteViaSFTP(sftp, remotePath, isDirectory);
+  }
+
+  public async deleteBatch(sessionId: string, remotePaths: string[]): Promise<void> {
+    if (remotePaths.length === 0) return;
+    const sftp = await this.getSFTP(sessionId);
+    const session = this.sshManager.getSession(sessionId);
+
+    for (const p of remotePaths) {
+      this.invalidateCacheForPath(sessionId, p);
+    }
+
+    if (session && session.client) {
+      return new Promise<void>((resolve, reject) => {
+        const safePaths = remotePaths.map((p) => `'${p.replace(/'/g, "'\\''")}'`).join(' ');
+        const cmd = `rm -rf -- ${safePaths}`;
+
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        }, 20000);
+
+        session.client.exec(cmd, (err, stream) => {
+          if (err) {
+            clearTimeout(timer);
+            settled = true;
+            return Promise.all(remotePaths.map((p) => this.deleteViaSFTP(sftp, p))).then(() => resolve(), reject);
+          }
+
+          let exitCode: number | null = null;
+          let stderrText = '';
+
+          stream.on('exit', (code) => {
+            exitCode = code;
+          });
+
+          stream.stderr.on('data', (chunk) => {
+            stderrText += chunk.toString();
+          });
+
+          stream.on('data', () => {}); // drain stdout
+
+          stream.on('close', () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            for (const p of remotePaths) {
+              this.invalidateCacheForPath(sessionId, p);
+            }
+            if (exitCode === 0 || exitCode === null) {
+              resolve();
+            } else {
+              if (stderrText.toLowerCase().includes('permission denied')) {
+                reject(new Error(stderrText.trim()));
+              } else {
+                Promise.all(remotePaths.map((p) => this.deleteViaSFTP(sftp, p))).then(() => resolve(), reject);
+              }
+            }
+          });
+
+          stream.on('error', () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            Promise.all(remotePaths.map((p) => this.deleteViaSFTP(sftp, p))).then(() => resolve(), reject);
+          });
+
+          stream.resume();
+          stream.stderr.resume();
+        });
+      });
+    }
+
+    for (const p of remotePaths) {
+      await this.deleteViaSFTP(sftp, p);
+    }
+  }
+
+  private async deleteViaSFTP(sftp: SFTPWrapper, remotePath: string, isDirectory?: boolean): Promise<void> {
+    let isDir = isDirectory;
+    if (isDir === undefined) {
+      try {
+        const stat = await new Promise<any>((res, rej) => sftp.stat(remotePath, (e, s) => (e ? rej(e) : res(s))));
+        isDir = (stat.mode & 0o040000) === 0o040000;
+      } catch {
+        isDir = false;
       }
+    }
+
+    if (!isDir) {
+      return new Promise((resolve, reject) => {
+        sftp.unlink(remotePath, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    }
+
+    let entries: any[] = [];
+    try {
+      entries = await new Promise<any[]>((resolve, reject) => {
+        sftp.readdir(remotePath, (err, list) => {
+          if (err) reject(err);
+          else resolve(list || []);
+        });
+      });
+    } catch {}
+
+    for (const entry of entries) {
+      if (entry.filename === '.' || entry.filename === '..') continue;
+      const subPath = `${remotePath.replace(/\/+$/, '')}/${entry.filename}`;
+      const subIsDir = (entry.attrs.mode & 0o040000) === 0o040000;
+      await this.deleteViaSFTP(sftp, subPath, subIsDir);
+    }
+
+    return new Promise((resolve, reject) => {
+      sftp.rmdir(remotePath, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
     });
   }
 
@@ -377,45 +558,658 @@ export class SFTPManager {
 
     const safeSrc = `'${srcPath.replace(/'/g, "'\\''")}'`;
     const safeDest = `'${destPath.replace(/'/g, "'\\''")}'`;
+    const cmd = `cp -r -- ${safeSrc} ${safeDest}`;
 
     return new Promise((resolve, reject) => {
-      session.client.exec(`cp -r -- ${safeSrc} ${safeDest}`, (err, stream) => {
-        if (err) return reject(err);
-        stream.on('close', (code: number) => {
-          if (code === 0) {
-            this.invalidateCacheForPath(sessionId, destPath);
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          this.invalidateCacheForPath(sessionId, destPath);
+          this.invalidateCacheForPath(sessionId, srcPath);
+          resolve();
+        }
+      }, 15000);
+
+      session.client.exec(cmd, (err, stream) => {
+        if (err) {
+          clearTimeout(timer);
+          settled = true;
+          return reject(err);
+        }
+
+        let exitCode: number | null = null;
+        let stderrText = '';
+
+        stream.on('exit', (code) => {
+          exitCode = code;
+        });
+
+        stream.stderr.on('data', (chunk) => {
+          stderrText += chunk.toString();
+        });
+
+        stream.on('data', () => {}); // drain stdout
+
+        stream.on('close', () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          this.invalidateCacheForPath(sessionId, destPath);
+          this.invalidateCacheForPath(sessionId, srcPath);
+
+          if (exitCode === 0 || exitCode === null) {
             resolve();
           } else {
-            reject(new Error(`Remote copy failed with code ${code}`));
+            reject(new Error(`Remote copy failed (exit code ${exitCode}): ${stderrText.trim()}`));
           }
         });
-        stream.on('error', (e: any) => reject(e));
+
+        stream.on('error', (e: any) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            reject(e);
+          }
+        });
+
+        stream.resume();
+        stream.stderr.resume();
       });
     });
   }
 
-  public async uploadFile(sessionId: string, localPath: string, remotePath: string): Promise<void> {
+  public async ensureRemoteDir(sftp: SFTPWrapper, remoteDir: string): Promise<void> {
+    const normalized = remoteDir.replace(/\\/g, '/');
+    const segments = normalized.split('/').filter(Boolean);
+    let current = normalized.startsWith('/') ? '' : '.';
+    for (const segment of segments) {
+      current = `${current}/${segment}`;
+      await new Promise<void>((resolve) => {
+        sftp.stat(current, (err, stats) => {
+          if (err || !stats || (stats.mode & 0o040000) !== 0o040000) {
+            sftp.mkdir(current, () => resolve());
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
+  }
+
+  public async uploadDirectory(
+    sessionId: string,
+    localDir: string,
+    remoteDir: string,
+    onFileUploaded?: (fileRelPath: string, bytes: number) => void
+  ): Promise<void> {
     const sftp = await this.getSFTP(sessionId);
+    await this.ensureRemoteDir(sftp, remoteDir);
+
+    const entries = await fs.promises.readdir(localDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryLocalPath = path.join(localDir, entry.name);
+      const entryRemotePath = `${remoteDir.replace(/\/+$/, '')}/${entry.name}`;
+
+      if (entry.isDirectory()) {
+        await this.uploadDirectory(sessionId, entryLocalPath, entryRemotePath, onFileUploaded);
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          sftp.fastPut(entryLocalPath, entryRemotePath, (err) => {
+            if (err) return reject(err);
+            this.invalidateCacheForPath(sessionId, entryRemotePath);
+            try {
+              const stat = fs.statSync(entryLocalPath);
+              onFileUploaded?.(entry.name, stat.size);
+            } catch {
+              onFileUploaded?.(entry.name, 0);
+            }
+            resolve();
+          });
+        });
+      }
+    }
+  }
+
+  public async downloadDirectory(
+    sessionId: string,
+    remoteDir: string,
+    localDir: string,
+    onFileDownloaded?: (fileRelPath: string, bytes: number) => void
+  ): Promise<void> {
+    const sftp = await this.getSFTP(sessionId);
+    await fs.promises.mkdir(localDir, { recursive: true });
+
+    const entries = await new Promise<any[]>((resolve, reject) => {
+      sftp.readdir(remoteDir, (err, list) => {
+        if (err) return reject(err);
+        resolve(list || []);
+      });
+    });
+
+    for (const entry of entries) {
+      if (entry.filename === '.' || entry.filename === '..') continue;
+      const entryRemotePath = `${remoteDir.replace(/\/+$/, '')}/${entry.filename}`;
+      const entryLocalPath = path.join(localDir, entry.filename);
+
+      const isDir = (entry.attrs.mode & 0o040000) === 0o040000;
+      if (isDir) {
+        await this.downloadDirectory(sessionId, entryRemotePath, entryLocalPath, onFileDownloaded);
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          sftp.fastGet(entryRemotePath, entryLocalPath, (err) => {
+            if (err) return reject(err);
+            onFileDownloaded?.(entry.filename, entry.attrs.size || 0);
+            resolve();
+          });
+        });
+      }
+    }
+  }
+
+  public async uploadFile(
+    sessionId: string,
+    localPath: string,
+    remotePath: string,
+    onProgress?: (bytes: number) => void
+  ): Promise<void> {
+    const stat = await fs.promises.lstat(localPath);
+    if (stat.isDirectory()) {
+      await this.uploadDirectory(sessionId, localPath, remotePath, (_, bytes) => {
+        onProgress?.(bytes);
+      });
+      this.invalidateCacheForPath(sessionId, remotePath);
+      return;
+    }
+
+    const sftp = await this.getSFTP(sessionId);
+    const lastSlash = remotePath.lastIndexOf('/');
+    if (lastSlash > 0) {
+      await this.ensureRemoteDir(sftp, remotePath.substring(0, lastSlash));
+    }
+
     return new Promise((resolve, reject) => {
-      sftp.fastPut(localPath, remotePath, (err) => {
+      sftp.fastPut(localPath, remotePath, {
+        chunkSize: 32768,
+        concurrency: 64,
+        step: (transferred) => {
+          onProgress?.(transferred);
+        },
+      }, (err) => {
         if (err) {
           reject(err);
         } else {
           this.invalidateCacheForPath(sessionId, remotePath);
+          onProgress?.(stat.size);
           resolve();
         }
       });
     });
   }
 
-  public async downloadFile(sessionId: string, remotePath: string, localPath: string): Promise<void> {
+  public async downloadFile(
+    sessionId: string,
+    remotePath: string,
+    localPath: string,
+    onProgress?: (bytes: number) => void
+  ): Promise<void> {
     const sftp = await this.getSFTP(sessionId);
-    return new Promise((resolve, reject) => {
-      sftp.fastGet(remotePath, localPath, (err) => {
+    const remoteStat = await new Promise<any>((resolve, reject) => {
+      sftp.stat(remotePath, (err, stats) => {
         if (err) reject(err);
-        else resolve();
+        else resolve(stats);
       });
     });
+
+    const isDir = (remoteStat.mode & 0o040000) === 0o040000;
+    if (isDir) {
+      await this.downloadDirectory(sessionId, remotePath, localPath, (_, bytes) => {
+        onProgress?.(bytes);
+      });
+      return;
+    }
+
+    await fs.promises.mkdir(path.dirname(localPath), { recursive: true });
+    return new Promise((resolve, reject) => {
+      sftp.fastGet(remotePath, localPath, {
+        chunkSize: 32768,
+        concurrency: 64,
+        step: (transferred) => {
+          onProgress?.(transferred);
+        },
+      }, (err) => {
+        if (err) reject(err);
+        else {
+          onProgress?.(remoteStat.size || 0);
+          resolve();
+        }
+      });
+    });
+  }
+
+  public async uploadBatch(
+    sessionId: string,
+    items: Array<{ localPath: string; remoteDest: string }>,
+    conflictPolicy: 'overwrite' | 'skip' | 'rename' = 'overwrite',
+    progressCallback?: (payload: any) => void
+  ): Promise<{ success: boolean; errors: string[] }> {
+    const sftp = await this.getSFTP(sessionId);
+    const transferId = `up_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const errors: string[] = [];
+
+    // 1. Scan and plan all files & directories
+    const dirsToCreate = new Set<string>();
+    const filesToUpload: Array<{ localPath: string; remotePath: string; displayName: string; size: number }> = [];
+
+    for (const item of items) {
+      try {
+        const stat = await fs.promises.stat(item.localPath);
+        if (stat.isDirectory()) {
+          dirsToCreate.add(item.remoteDest.replace(/\\/g, '/'));
+
+          const walk = async (currentLocal: string, currentRemote: string, relPrefix: string) => {
+            const entries = await fs.promises.readdir(currentLocal, { withFileTypes: true });
+            for (const entry of entries) {
+              const subLocal = path.join(currentLocal, entry.name);
+              const subRemote = `${currentRemote.replace(/\/+$/, '')}/${entry.name}`;
+              const subRel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+
+              if (entry.isDirectory()) {
+                dirsToCreate.add(subRemote);
+                await walk(subLocal, subRemote, subRel);
+              } else if (entry.isFile()) {
+                try {
+                  const s = await fs.promises.stat(subLocal);
+                  filesToUpload.push({
+                    localPath: subLocal,
+                    remotePath: subRemote,
+                    displayName: subRel,
+                    size: s.size,
+                  });
+                } catch {
+                  filesToUpload.push({
+                    localPath: subLocal,
+                    remotePath: subRemote,
+                    displayName: subRel,
+                    size: 0,
+                  });
+                }
+              }
+            }
+          };
+
+          await walk(item.localPath, item.remoteDest.replace(/\\/g, '/'), path.basename(item.localPath));
+        } else {
+          // File
+          const remoteDir = path.dirname(item.remoteDest).replace(/\\/g, '/');
+          dirsToCreate.add(remoteDir);
+          filesToUpload.push({
+            localPath: item.localPath,
+            remotePath: item.remoteDest.replace(/\\/g, '/'),
+            displayName: path.basename(item.localPath),
+            size: stat.size,
+          });
+        }
+      } catch (err: any) {
+        errors.push(`${path.basename(item.localPath)}: ${err.message}`);
+      }
+    }
+
+    const totalFiles = filesToUpload.length;
+    const totalBytes = filesToUpload.reduce((acc, f) => acc + f.size, 0);
+    const startTime = Date.now();
+    let completedFiles = 0;
+    let completedBytesSoFar = 0;
+    let lastProgressEmit = 0;
+
+    progressCallback?.({
+      transferId,
+      type: 'upload',
+      status: 'starting',
+      currentFile: filesToUpload[0]?.displayName || (items[0] ? path.basename(items[0].localPath) : ''),
+      fileIndex: 0,
+      totalFiles,
+      bytesTransferred: 0,
+      totalBytes,
+      speedBytesPerSec: 0,
+    });
+
+    // 2. Ensure all remote directories exist
+    const sortedDirs = Array.from(dirsToCreate).sort((a, b) => a.split('/').length - b.split('/').length);
+    for (const dir of sortedDirs) {
+      if (dir && dir !== '/' && dir !== '.') {
+        await this.ensureRemoteDir(sftp, dir);
+      }
+    }
+
+    // If no files to upload (e.g. only empty folders), finish now
+    if (totalFiles === 0) {
+      progressCallback?.({
+        transferId,
+        type: 'upload',
+        status: errors.length > 0 ? 'error' : 'completed',
+        currentFile: '',
+        fileIndex: 0,
+        totalFiles: 0,
+        bytesTransferred: 0,
+        totalBytes: 0,
+        speedBytesPerSec: 0,
+        error: errors.length > 0 ? errors.join('; ') : undefined,
+      });
+      return { success: errors.length === 0, errors };
+    }
+
+    // 3. Upload all files sequentially with live chunk progress & conflict handling
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const file = filesToUpload[i];
+      let targetRemotePath = file.remotePath;
+
+      // Conflict handling if file exists remotely
+      if (conflictPolicy === 'skip' || conflictPolicy === 'rename') {
+        let exists = false;
+        try {
+          await new Promise<void>((res, rej) => {
+            sftp.stat(targetRemotePath, (err) => (err ? rej(err) : res()));
+          });
+          exists = true;
+        } catch {
+          exists = false;
+        }
+
+        if (exists) {
+          if (conflictPolicy === 'skip') {
+            completedFiles++;
+            completedBytesSoFar += file.size;
+            progressCallback?.({
+              transferId,
+              type: 'upload',
+              status: 'progress',
+              currentFile: `${file.displayName} (пропущен)`,
+              fileIndex: completedFiles,
+              totalFiles,
+              bytesTransferred: completedBytesSoFar,
+              totalBytes,
+              speedBytesPerSec: 0,
+            });
+            continue;
+          } else if (conflictPolicy === 'rename') {
+            const dir = path.dirname(targetRemotePath).replace(/\\/g, '/');
+            const ext = path.extname(targetRemotePath);
+            const base = path.basename(targetRemotePath, ext);
+            let counter = 1;
+            let candidate = `${dir}/${base} (${counter})${ext}`;
+            while (counter < 100) {
+              try {
+                await new Promise<void>((res, rej) => {
+                  sftp.stat(candidate, (err) => (err ? rej(err) : res()));
+                });
+                counter++;
+                candidate = `${dir}/${base} (${counter})${ext}`;
+              } catch {
+                break;
+              }
+            }
+            targetRemotePath = candidate;
+          }
+        }
+      }
+
+      const parentDir = path.dirname(targetRemotePath).replace(/\\/g, '/');
+      await this.ensureRemoteDir(sftp, parentDir);
+
+      try {
+        await new Promise<void>((resolve, reject) => {
+          sftp.fastPut(file.localPath, targetRemotePath, {
+            chunkSize: 32768,
+            concurrency: 64,
+            step: (transferredChunk) => {
+              const now = Date.now();
+              if (now - lastProgressEmit >= 100) {
+                lastProgressEmit = now;
+                const currentTotal = completedBytesSoFar + transferredChunk;
+                const elapsedSec = (now - startTime) / 1000 || 0.1;
+                const speed = Math.round(currentTotal / elapsedSec);
+
+                progressCallback?.({
+                  transferId,
+                  type: 'upload',
+                  status: 'progress',
+                  currentFile: file.displayName,
+                  fileIndex: completedFiles + 1,
+                  totalFiles,
+                  bytesTransferred: currentTotal,
+                  totalBytes,
+                  speedBytesPerSec: speed,
+                });
+              }
+            },
+          }, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+
+        completedBytesSoFar += file.size;
+        completedFiles++;
+        this.invalidateCacheForPath(sessionId, targetRemotePath);
+
+        const now = Date.now();
+        lastProgressEmit = now;
+        const elapsedSec = (now - startTime) / 1000 || 0.1;
+        const speed = Math.round(completedBytesSoFar / elapsedSec);
+
+        progressCallback?.({
+          transferId,
+          type: 'upload',
+          status: 'progress',
+          currentFile: file.displayName,
+          fileIndex: completedFiles,
+          totalFiles,
+          bytesTransferred: completedBytesSoFar,
+          totalBytes,
+          speedBytesPerSec: speed,
+        });
+      } catch (err: any) {
+        errors.push(`${file.displayName}: ${err.message}`);
+      }
+    }
+
+    const elapsedSec = (Date.now() - startTime) / 1000 || 0.1;
+    progressCallback?.({
+      transferId,
+      type: 'upload',
+      status: errors.length === totalFiles && totalFiles > 0 ? 'error' : 'completed',
+      currentFile: '',
+      fileIndex: completedFiles,
+      totalFiles,
+      bytesTransferred: completedBytesSoFar,
+      totalBytes,
+      speedBytesPerSec: Math.round(completedBytesSoFar / elapsedSec),
+      error: errors.length > 0 ? errors.join('; ') : undefined,
+    });
+
+    return { success: errors.length === 0, errors };
+  }
+
+  public async downloadBatch(
+    sessionId: string,
+    items: Array<{ remotePath: string; localDest: string }>,
+    progressCallback?: (payload: any) => void
+  ): Promise<{ success: boolean; errors: string[] }> {
+    const sftp = await this.getSFTP(sessionId);
+    const transferId = `down_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const errors: string[] = [];
+
+    // 1. Scan and plan all files & directories
+    const filesToDownload: Array<{ remotePath: string; localPath: string; displayName: string; size: number }> = [];
+
+    for (const item of items) {
+      try {
+        const stat = await new Promise<any>((resolve, reject) => {
+          sftp.stat(item.remotePath, (err, stats) => {
+            if (err) reject(err);
+            else resolve(stats);
+          });
+        });
+
+        const isDir = (stat.mode & 0o040000) === 0o040000;
+        if (isDir) {
+          await fs.promises.mkdir(item.localDest, { recursive: true });
+
+          const walkRemote = async (currRemote: string, currLocal: string, relPrefix: string) => {
+            await fs.promises.mkdir(currLocal, { recursive: true });
+            const entries = await new Promise<any[]>((resolve, reject) => {
+              sftp.readdir(currRemote, (err, list) => {
+                if (err) reject(err);
+                else resolve(list || []);
+              });
+            });
+
+            for (const entry of entries) {
+              if (entry.filename === '.' || entry.filename === '..') continue;
+              const subRemote = `${currRemote.replace(/\/+$/, '')}/${entry.filename}`;
+              const subLocal = path.join(currLocal, entry.filename);
+              const subRel = relPrefix ? `${relPrefix}/${entry.filename}` : entry.filename;
+              const isSubDir = (entry.attrs.mode & 0o040000) === 0o040000;
+
+              if (isSubDir) {
+                await walkRemote(subRemote, subLocal, subRel);
+              } else {
+                filesToDownload.push({
+                  remotePath: subRemote,
+                  localPath: subLocal,
+                  displayName: subRel,
+                  size: entry.attrs.size || 0,
+                });
+              }
+            }
+          };
+
+          await walkRemote(item.remotePath, item.localDest, path.basename(item.remotePath));
+        } else {
+          await fs.promises.mkdir(path.dirname(item.localDest), { recursive: true });
+          filesToDownload.push({
+            remotePath: item.remotePath,
+            localPath: item.localDest,
+            displayName: path.basename(item.remotePath),
+            size: stat.size || 0,
+          });
+        }
+      } catch (err: any) {
+        errors.push(`${path.basename(item.remotePath)}: ${err.message}`);
+      }
+    }
+
+    const totalFiles = filesToDownload.length;
+    const totalBytes = filesToDownload.reduce((acc, f) => acc + f.size, 0);
+    const startTime = Date.now();
+    let completedFiles = 0;
+    let completedBytesSoFar = 0;
+    let lastProgressEmit = 0;
+
+    progressCallback?.({
+      transferId,
+      type: 'download',
+      status: 'starting',
+      currentFile: filesToDownload[0]?.displayName || '',
+      fileIndex: 0,
+      totalFiles,
+      bytesTransferred: 0,
+      totalBytes,
+      speedBytesPerSec: 0,
+    });
+
+    if (totalFiles === 0) {
+      progressCallback?.({
+        transferId,
+        type: 'download',
+        status: errors.length > 0 ? 'error' : 'completed',
+        currentFile: '',
+        fileIndex: 0,
+        totalFiles: 0,
+        bytesTransferred: 0,
+        totalBytes: 0,
+        speedBytesPerSec: 0,
+        error: errors.length > 0 ? errors.join('; ') : undefined,
+      });
+      return { success: errors.length === 0, errors };
+    }
+
+    for (let i = 0; i < filesToDownload.length; i++) {
+      const file = filesToDownload[i];
+      await fs.promises.mkdir(path.dirname(file.localPath), { recursive: true });
+
+      try {
+        await new Promise<void>((resolve, reject) => {
+          sftp.fastGet(file.remotePath, file.localPath, {
+            chunkSize: 32768,
+            concurrency: 64,
+            step: (transferredChunk) => {
+              const now = Date.now();
+              if (now - lastProgressEmit >= 100) {
+                lastProgressEmit = now;
+                const currentTotal = completedBytesSoFar + transferredChunk;
+                const elapsedSec = (now - startTime) / 1000 || 0.1;
+                const speed = Math.round(currentTotal / elapsedSec);
+
+                progressCallback?.({
+                  transferId,
+                  type: 'download',
+                  status: 'progress',
+                  currentFile: file.displayName,
+                  fileIndex: completedFiles + 1,
+                  totalFiles,
+                  bytesTransferred: currentTotal,
+                  totalBytes,
+                  speedBytesPerSec: speed,
+                });
+              }
+            },
+          }, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+
+        completedBytesSoFar += file.size;
+        completedFiles++;
+
+        const now = Date.now();
+        lastProgressEmit = now;
+        const elapsedSec = (now - startTime) / 1000 || 0.1;
+        const speed = Math.round(completedBytesSoFar / elapsedSec);
+
+        progressCallback?.({
+          transferId,
+          type: 'download',
+          status: 'progress',
+          currentFile: file.displayName,
+          fileIndex: completedFiles,
+          totalFiles,
+          bytesTransferred: completedBytesSoFar,
+          totalBytes,
+          speedBytesPerSec: speed,
+        });
+      } catch (err: any) {
+        errors.push(`${file.displayName}: ${err.message}`);
+      }
+    }
+
+    const elapsedSec = (Date.now() - startTime) / 1000 || 0.1;
+    progressCallback?.({
+      transferId,
+      type: 'download',
+      status: errors.length === totalFiles && totalFiles > 0 ? 'error' : 'completed',
+      currentFile: '',
+      fileIndex: completedFiles,
+      totalFiles,
+      bytesTransferred: completedBytesSoFar,
+      totalBytes,
+      speedBytesPerSec: Math.round(completedBytesSoFar / elapsedSec),
+      error: errors.length > 0 ? errors.join('; ') : undefined,
+    });
+
+    return { success: errors.length === 0, errors };
   }
 
   public async rename(sessionId: string, oldPath: string, newPath: string): Promise<void> {

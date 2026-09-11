@@ -28,6 +28,7 @@ import { I18nProvider, useTranslation } from './i18n';
 import { parseSSHConnectionString } from './utils/sshParser';
 import { sanitizeRemotePath, formatCdCommand } from './utils/pathUtils';
 import { ShieldCheck, Lock, Radio, AlertCircle } from 'lucide-react';
+import { TransferProgressDrawer } from './components/TransferProgressDrawer';
 import appLogo from './assets/logo.png';
 
 const MainApp: React.FC = () => {
@@ -537,8 +538,13 @@ const MainApp: React.FC = () => {
       // Disabling split: collapse right-to-left!
       // In mono, the leftmost pane (pane 0) becomes the mono tab.
       const leftPane = targetTab.panes?.[0];
-      const targetType = (leftPane?.viewType as TabType) || targetTab.originalType || targetTab.type;
-      const targetTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+      const targetType = (leftPane?.viewType as TabType) || targetTab.type;
+      const linkedTab = leftPane?.tabId ? tabs.find((t) => t.id === leftPane.tabId) : undefined;
+      const targetSessionId = linkedTab?.sessionId || (targetType === 'local' ? undefined : targetTab.sessionId);
+      let targetTitle = (linkedTab?.title || targetTab.originalTitle || targetTab.title).replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+      if (targetType === 'local') {
+        targetTitle = 'Локальные файлы';
+      }
 
       setTabs((prev) =>
         prev.map((t) =>
@@ -547,7 +553,10 @@ const MainApp: React.FC = () => {
                 ...t,
                 splitMode: 'single',
                 type: targetType,
+                originalType: targetType,
+                originalTitle: targetTitle,
                 title: targetTitle,
+                sessionId: targetSessionId,
                 panes: undefined,
               }
             : t
@@ -561,7 +570,10 @@ const MainApp: React.FC = () => {
       if (targetTab.splitMode === 'split-3') {
         // Collapsing from 3 to 2 panes: drop the rightmost pane (pane 2)!
         const currentPanes = targetTab.panes || [];
-        const nextPanes = [currentPanes[0], currentPanes[1]];
+        const nextPanes: PaneConfig[] = [
+          { ...(currentPanes[0] || { id: 'pane-0', viewType: targetTab.type }), id: 'pane-0' },
+          { ...(currentPanes[1] || { id: 'pane-1', viewType: 'sftp' }), id: 'pane-1' },
+        ];
         const baseTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
         const newTitle = `${baseTitle} [${nextPanes[0].viewType.toUpperCase()} + ${nextPanes[1].viewType.toUpperCase()}]`;
 
@@ -578,10 +590,21 @@ const MainApp: React.FC = () => {
           )
         );
       } else {
-        // Upgrading from single to 2 panes
-        const currentType = (targetTab.originalType || targetTab.type) as PaneViewType;
-        const secondType: PaneViewType = currentType === 'terminal' ? 'sftp' : 'terminal';
-        const baseTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+        // Upgrading from single to 2 panes:
+        // The current surviving tab view ALWAYS becomes pane-0 (the primary left pane)!
+        const currentType = (targetTab.type) as PaneViewType;
+        let secondType: PaneViewType = 'terminal';
+        if (currentType === 'terminal') {
+          secondType = 'sftp';
+        } else if (currentType === 'sftp') {
+          secondType = 'terminal';
+        } else if (currentType === 'local') {
+          secondType = targetTab.sessionId ? 'sftp' : 'terminal';
+        } else {
+          secondType = 'terminal';
+        }
+
+        const baseTitle = (targetTab.originalTitle || targetTab.title).replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
         const newTitle = `${baseTitle} [${currentType.toUpperCase()} + ${secondType.toUpperCase()}]`;
 
         const initialPanes: PaneConfig[] = [
@@ -595,8 +618,8 @@ const MainApp: React.FC = () => {
               ? {
                   ...t,
                   splitMode: 'split-2',
-                  originalType: t.originalType || t.type,
-                  originalTitle: t.originalTitle || t.title,
+                  originalType: currentType as TabType,
+                  originalTitle: baseTitle,
                   panes: initialPanes,
                   title: newTitle,
                 }
@@ -605,15 +628,17 @@ const MainApp: React.FC = () => {
         );
       }
     } else if (mode === 'split-3') {
-      const currentPanes = targetTab.panes || [
-        { id: 'pane-0', viewType: (targetTab.originalType || targetTab.type) as PaneViewType, tabId: targetTab.id },
-        { id: 'pane-1', viewType: 'sftp' as PaneViewType },
-      ];
+      const currentPanes = targetTab.panes && targetTab.panes.length > 0
+        ? targetTab.panes
+        : [
+            { id: 'pane-0', viewType: targetTab.type as PaneViewType, tabId: targetTab.id },
+            { id: 'pane-1', viewType: 'sftp' as PaneViewType },
+          ];
 
       const thirdType: PaneViewType = currentPanes.some((p) => p.viewType === 'local') ? 'terminal' : 'local';
       const nextPanes: PaneConfig[] = [
-        currentPanes[0] || { id: 'pane-0', viewType: (targetTab.originalType || targetTab.type) as PaneViewType, tabId: targetTab.id },
-        currentPanes[1] || { id: 'pane-1', viewType: 'sftp' },
+        { ...currentPanes[0], id: 'pane-0' },
+        { ...(currentPanes[1] || { viewType: 'sftp' }), id: 'pane-1' },
         { id: 'pane-2', viewType: thirdType },
       ];
 
@@ -626,8 +651,8 @@ const MainApp: React.FC = () => {
             ? {
                 ...t,
                 splitMode: 'split-3',
-                originalType: t.originalType || t.type,
-                originalTitle: t.originalTitle || t.title,
+                originalType: targetTab.type,
+                originalTitle: baseTitle,
                 panes: nextPanes,
                 title: newTitle,
               }
@@ -645,12 +670,22 @@ const MainApp: React.FC = () => {
   const handleRemovePane = useCallback((paneIndex: number, tabIdTarget?: string) => {
     const targetTab = (tabIdTarget ? tabs.find((t) => t.id === tabIdTarget) : null) || activeTab;
     if (!targetTab) return;
-    const currentPanes = targetTab.panes || [];
+    const currentPanes = targetTab.panes && targetTab.panes.length > 0
+      ? targetTab.panes
+      : [
+          { id: 'pane-0', viewType: targetTab.type as PaneViewType, tabId: targetTab.id },
+          { id: 'pane-1', viewType: 'sftp' as PaneViewType },
+        ];
+
     if (currentPanes.length <= 1) return;
 
     if (targetTab.splitMode === 'split-3') {
-      const nextPanes = currentPanes.filter((_, idx) => idx !== paneIndex);
-      const baseTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+      const remainingPanes = currentPanes.filter((_, idx) => idx !== paneIndex);
+      const nextPanes: PaneConfig[] = [
+        { ...remainingPanes[0], id: 'pane-0' },
+        { ...remainingPanes[1], id: 'pane-1' },
+      ];
+      const baseTitle = (targetTab.originalTitle || targetTab.title).replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
       const newTitle = `${baseTitle} [${nextPanes[0].viewType.toUpperCase()} + ${nextPanes[1].viewType.toUpperCase()}]`;
 
       setTabs((prev) =>
@@ -666,13 +701,20 @@ const MainApp: React.FC = () => {
         )
       );
     } else {
-      // 2 panes -> 1 pane: the remaining pane becomes the single tab content
-      const remainingPane = currentPanes[1 - paneIndex] || currentPanes[0];
-      const targetType = (remainingPane.viewType as TabType) || targetTab.originalType || targetTab.type;
-      const targetTitle = targetTab.originalTitle || targetTab.title.replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+      // 2 panes -> 1 pane: the surviving pane becomes the 100% full width single tab content
+      const survivingPane = currentPanes.find((_, idx) => idx !== paneIndex) || currentPanes[0];
+      const survivingType = (survivingPane.viewType as TabType) || 'terminal';
 
-      const linkedTab = remainingPane.tabId ? tabs.find((t) => t.id === remainingPane.tabId) : undefined;
-      const targetSessionId = linkedTab?.sessionId || targetTab.sessionId;
+      const linkedTab = survivingPane.tabId ? tabs.find((t) => t.id === survivingPane.tabId) : undefined;
+      const survivingSessionId = linkedTab?.sessionId || (survivingType === 'local' ? undefined : targetTab.sessionId);
+
+      let baseTitle = (linkedTab?.title || targetTab.originalTitle || targetTab.title).replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+      if (survivingType === 'local') {
+        baseTitle = 'Локальные файлы';
+      } else if (survivingSessionId && activeSessions.has(survivingSessionId)) {
+        const host = activeSessions.get(survivingSessionId);
+        baseTitle = `${host?.name || 'Server'} (${survivingType.toUpperCase()})`;
+      }
 
       setTabs((prev) =>
         prev.map((t) =>
@@ -680,24 +722,64 @@ const MainApp: React.FC = () => {
             ? {
                 ...t,
                 splitMode: 'single',
-                type: targetType,
-                title: targetTitle,
-                sessionId: targetSessionId,
+                type: survivingType,
+                originalType: survivingType, // Clear/reset to surviving type so re-split anchors on survivor!
+                originalTitle: baseTitle,
+                title: baseTitle,
+                sessionId: survivingSessionId,
                 panes: undefined,
               }
             : t
         )
       );
       if (activeTabId === targetTab.id) {
-        setCurrentView(targetType);
-        lastActiveTabByType.current[targetType] = targetTab.id;
+        setCurrentView(survivingType);
+        lastActiveTabByType.current[survivingType] = targetTab.id;
       }
     }
 
     setTimeout(() => {
       window.dispatchEvent(new Event('resize'));
     }, 50);
-  }, [activeTab, activeTabId, tabs]);
+  }, [activeTab, activeTabId, tabs, activeSessions]);
+
+  // Swap adjacent panes
+  const handleSwapPanes = useCallback((indexA: number, indexB: number, tabIdTarget?: string) => {
+    const targetId = tabIdTarget || activeTabId;
+    if (!targetId) return;
+
+    setTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.id !== targetId) return tab;
+        const currentPanes = tab.panes && tab.panes.length > 0
+          ? [...tab.panes]
+          : [
+              { id: 'pane-0', viewType: tab.type as PaneViewType, tabId: tab.id },
+              { id: 'pane-1', viewType: 'sftp' as PaneViewType },
+            ];
+
+        if (!currentPanes[indexA] || !currentPanes[indexB]) return tab;
+
+        const temp = currentPanes[indexA];
+        currentPanes[indexA] = currentPanes[indexB];
+        currentPanes[indexB] = temp;
+
+        const baseTitle = (tab.originalTitle || tab.title).replace(/\s*\[.*\]$/, '').replace(/\s*\(\d+\)$/, '');
+        const paneTypesStr = currentPanes.map((p) => p.viewType.toUpperCase()).join(' + ');
+        const newTitle = `${baseTitle} [${paneTypesStr}]`;
+
+        return {
+          ...tab,
+          panes: currentPanes,
+          title: newTitle,
+        };
+      })
+    );
+
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
+  }, [activeTabId]);
 
   const handleChangePane = useCallback((paneIndex: number, newConfig: PaneConfig, tabIdTarget?: string) => {
     const targetId = tabIdTarget || activeTabId;
@@ -715,12 +797,34 @@ const MainApp: React.FC = () => {
   const handleNavigateToTerminal = useCallback((sessionId: string, folderPath: string, shouldSwitchTab = true) => {
     const cleanPath = sanitizeRemotePath(folderPath);
     const cdCmd = formatCdCommand(cleanPath);
+
+    // Check if the current active tab has a visible terminal pane in a split layout
+    const hasAdjacentTerminal = Boolean(
+      activeTab &&
+      activeTab.splitMode &&
+      activeTab.splitMode !== 'single' &&
+      activeTab.panes?.some((p) => p.viewType === 'terminal')
+    );
+
+    if (!shouldSwitchTab) {
+      // Background sync during SFTP browsing: ONLY sync if a terminal pane is visible right next to SFTP in this tab!
+      if (hasAdjacentTerminal) {
+        window.api?.ssh.write(sessionId, cdCmd.endsWith('\n') ? cdCmd : `${cdCmd}\n`);
+      }
+      // Otherwise do NOTHING: do not switch tabs, do not launch new connections, do not mutate background tabs
+      return;
+    }
+
+    // User explicitly requested "Open in Terminal" (shouldSwitchTab === true)
+    if (hasAdjacentTerminal) {
+      window.api?.ssh.write(sessionId, cdCmd.endsWith('\n') ? cdCmd : `${cdCmd}\n`);
+      return;
+    }
+
     const termTab = tabs.find((t) => t.sessionId === sessionId && t.type === 'terminal');
     if (termTab) {
-      if (shouldSwitchTab && (!activeTab || !activeTab.splitMode || activeTab.splitMode === 'single')) {
-        setActiveTabId(termTab.id);
-        setCurrentView('terminal');
-      }
+      setActiveTabId(termTab.id);
+      setCurrentView('terminal');
       window.api?.ssh.write(sessionId, cdCmd.endsWith('\n') ? cdCmd : `${cdCmd}\n`);
     } else {
       const host = activeSessions.get(sessionId);
@@ -794,10 +898,6 @@ const MainApp: React.FC = () => {
             }
             if (view === 'settings') {
               setActiveTabId('settings-view');
-              return;
-            }
-            if (view === 'local') {
-              setActiveTabId('local-view');
               return;
             }
             if (view === 'tunnels') {
@@ -912,6 +1012,7 @@ const MainApp: React.FC = () => {
                   onChangePane={handleChangePane}
                   onSetSplitMode={handleSetSplitMode}
                   onRemovePane={handleRemovePane}
+                  onSwapPanes={handleSwapPanes}
                   onTabModifiedChange={handleTabModifiedChange}
                 />
               );
@@ -919,12 +1020,13 @@ const MainApp: React.FC = () => {
 
             {/* Dedicated Local Files View (Kept alive across all tab & view switches) */}
             <div
-              className="w-full h-full"
-              style={{ display: currentView === 'local' ? 'flex' : 'none' }}
+              className="w-full h-full flex-shrink-0"
+              style={{ display: currentView === 'local' && activeTabId === 'local-view' ? 'flex' : 'none' }}
             >
               <LocalFilesView
                 isLight={isLight}
                 folderClickMode={settings.folderClickMode || 'double'}
+                activeSessions={activeSessions}
                 onOpenFileInEditor={(filePath, fileName) => {
                   const firstSessionId = Array.from(activeSessions.keys())[0];
                   if (firstSessionId) {
@@ -934,8 +1036,8 @@ const MainApp: React.FC = () => {
               />
             </div>
 
-            {/* Terminal Empty State when no terminal tabs exist */}
-            {currentView === 'terminal' && !tabs.some((t) => t.type === 'terminal' && t.sessionId) && (
+            {/* Terminal Empty State when no terminal tabs exist or dedicated view is active */}
+            {currentView === 'terminal' && (activeTabId === 'terminal-view' || !tabs.some((t) => t.id === activeTabId)) && (
               <EmptyStateView
                 viewType="terminal"
                 hosts={hosts}
@@ -949,8 +1051,8 @@ const MainApp: React.FC = () => {
               />
             )}
 
-            {/* SFTP Empty State when no SFTP tabs exist */}
-            {currentView === 'sftp' && !tabs.some((t) => t.type === 'sftp' && t.sessionId) && (
+            {/* SFTP Empty State when no SFTP tabs exist or dedicated view is active */}
+            {currentView === 'sftp' && (activeTabId === 'sftp-view' || !tabs.some((t) => t.id === activeTabId)) && (
               <EmptyStateView
                 viewType="sftp"
                 hosts={hosts}
@@ -964,8 +1066,8 @@ const MainApp: React.FC = () => {
               />
             )}
 
-            {/* Monitor Empty State when no monitor tabs exist */}
-            {currentView === 'monitor' && !tabs.some((t) => t.type === 'monitor' && t.sessionId) && (
+            {/* Monitor Empty State when no monitor tabs exist or dedicated view is active */}
+            {currentView === 'monitor' && (activeTabId === 'monitor-view' || !tabs.some((t) => t.id === activeTabId)) && (
               <EmptyStateView
                 viewType="monitor"
                 hosts={hosts}
@@ -1188,6 +1290,8 @@ const MainApp: React.FC = () => {
           />
         )}
       </Suspense>
+
+      <TransferProgressDrawer isLight={isLight} />
     </div>
   );
 };
