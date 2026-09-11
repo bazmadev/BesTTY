@@ -12,6 +12,7 @@ interface CachedDir {
 
 export class SFTPManager {
   private sftpSessions: Map<string, SFTPWrapper> = new Map();
+  private pendingSftpPromises: Map<string, Promise<SFTPWrapper>> = new Map();
   private dirCache: Map<string, CachedDir> = new Map();
   private readonly CACHE_TTL_MS = 30000; // 30 seconds
 
@@ -43,30 +44,73 @@ export class SFTPManager {
     }
   }
 
+  public closeSession(sessionId: string): void {
+    const sftp = this.sftpSessions.get(sessionId);
+    if (sftp) {
+      try {
+        sftp.end();
+      } catch {}
+      this.sftpSessions.delete(sessionId);
+    }
+    this.pendingSftpPromises.delete(sessionId);
+    this.clearCacheForSession(sessionId);
+  }
+
   private async getSFTP(sessionId: string): Promise<SFTPWrapper> {
     const existing = this.sftpSessions.get(sessionId);
     if (existing) {
       return existing;
     }
 
-    const session = this.sshManager.getSession(sessionId);
-    if (!session || !session.client) {
-      throw new Error(`SSH Session ${sessionId} not found or not connected`);
+    // Deduplicate concurrent calls for the same session to avoid opening multiple SFTP channels simultaneously
+    const pending = this.pendingSftpPromises.get(sessionId);
+    if (pending) {
+      return pending;
     }
 
-    return new Promise((resolve, reject) => {
-      session.client.sftp((err, sftp) => {
-        if (err) {
-          return reject(err);
-        }
-        this.sftpSessions.set(sessionId, sftp);
-        sftp.on('close', () => {
+    const promise = (async () => {
+      const session = this.sshManager.getSession(sessionId);
+      if (!session || !session.client) {
+        throw new Error(`SSH Session ${sessionId} not found or not connected`);
+      }
+
+      return new Promise<SFTPWrapper>((resolve, reject) => {
+        let isSettled = false;
+        const cleanup = () => {
           this.sftpSessions.delete(sessionId);
+          this.pendingSftpPromises.delete(sessionId);
           this.clearCacheForSession(sessionId);
+        };
+
+        session.client.sftp((err, sftp) => {
+          if (isSettled) return;
+          isSettled = true;
+
+          if (err) {
+            cleanup();
+            return reject(err);
+          }
+
+          this.sftpSessions.set(sessionId, sftp);
+
+          sftp.on('close', cleanup);
+          sftp.on('end', cleanup);
+          sftp.on('error', (wrapErr: any) => {
+            console.warn(`[SFTPManager] SFTP channel error on session ${sessionId}:`, wrapErr?.message || wrapErr);
+            cleanup();
+          });
+
+          resolve(sftp);
         });
-        resolve(sftp);
       });
-    });
+    })();
+
+    this.pendingSftpPromises.set(sessionId, promise);
+    try {
+      return await promise;
+    } finally {
+      this.pendingSftpPromises.delete(sessionId);
+    }
   }
 
   private formatPermissions(mode: number): string {
@@ -83,6 +127,33 @@ export class SFTPManager {
   }
 
   public async listDirectory(
+    sessionId: string,
+    remotePath: string = '.',
+    forceRefresh: boolean = false
+  ): Promise<{ currentPath: string; files: SFTPFile[] }> {
+    try {
+      return await this.executeListDirectory(sessionId, remotePath, forceRefresh);
+    } catch (err: any) {
+      const isChannelError =
+        err?.message?.includes('Channel open failure') ||
+        err?.message?.includes('No SFTP connection') ||
+        err?.message?.includes('closed') ||
+        err?.reason === 2;
+
+      if (isChannelError) {
+        console.warn(`[SFTPManager] Transient channel error on session ${sessionId}. Resetting channel and retrying...`);
+        this.closeSession(sessionId);
+        const session = this.sshManager.getSession(sessionId);
+        if (session && session.client) {
+          await new Promise((r) => setTimeout(r, 150));
+          return await this.executeListDirectory(sessionId, remotePath, true);
+        }
+      }
+      throw err;
+    }
+  }
+
+  private async executeListDirectory(
     sessionId: string,
     remotePath: string = '.',
     forceRefresh: boolean = false

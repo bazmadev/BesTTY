@@ -45,6 +45,12 @@ sshManager.on('closed', (payload) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('ssh:closed', payload);
   }
+  sftpManager.closeSession(payload.sessionId);
+  monitorService.stopMonitoring(payload.sessionId);
+});
+
+sshManager.on('disconnected', (payload) => {
+  sftpManager.closeSession(payload.sessionId);
   monitorService.stopMonitoring(payload.sessionId);
 });
 
@@ -199,6 +205,7 @@ function registerIpcHandlers() {
     sshManager.resize(sessionId, cols, rows);
   });
   ipcMain.handle('ssh:disconnect', (_, sessionId) => {
+    sftpManager.closeSession(sessionId);
     sshManager.disconnect(sessionId);
     monitorService.stopMonitoring(sessionId);
   });

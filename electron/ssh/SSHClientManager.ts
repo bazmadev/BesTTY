@@ -487,27 +487,44 @@ export class SSHClientManager extends EventEmitter {
         );
       });
 
-      client.on('error', (err) => {
+      client.on('error', (err: any) => {
+        const isNetworkReset =
+          err?.message?.includes('ECONNRESET') ||
+          err?.message?.includes('ETIMEDOUT') ||
+          err?.message?.includes('EPIPE') ||
+          err?.message?.includes('ECONNREFUSED');
+
         const diagnosticError = formatAuthError(
-          err.message || String(err),
+          err?.message || String(err),
           host,
           authPipeline.getServerMethodsAllowed(),
           detectedFingerprint
         );
-        console.error(`SSH Client error for session ${sessionId}:`, diagnosticError);
+
+        if (isNetworkReset) {
+          console.warn(`[SSHClientManager] Network disconnect on session ${sessionId}: ${err?.message || err}`);
+        } else {
+          console.error(`SSH Client error for session ${sessionId}:`, diagnosticError);
+        }
+
         this.emit('ssh-error', { sessionId, error: diagnosticError });
         if (!isResolved) {
           isResolved = true;
           reject(new Error(diagnosticError));
         }
+
+        // Clean up dead session immediately on socket error so no zombie sessions remain
+        this.disconnect(sessionId);
       });
 
       client.on('end', () => {
         this.emit('disconnected', { sessionId });
+        this.disconnect(sessionId);
       });
 
       client.on('close', () => {
         this.emit('closed', { sessionId });
+        this.disconnect(sessionId);
       });
 
       try {
