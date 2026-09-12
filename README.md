@@ -22,10 +22,10 @@ Download official release binaries directly from the [Releases Page](https://git
 
 | Platform | Download | Description | Antivirus & Checksums |
 | :--- | :--- | :--- | :--- |
-| **Windows** | [📥 BesTTY-Setup-1.0.0.exe](https://github.com/bazmadev/BesTTY/releases/latest) | Installer for Windows 10 & 11 (x64) | [🛡️ VirusTotal & SHA-256](https://github.com/bazmadev/BesTTY/releases/latest) |
-| **Windows (Portable)** | [📦 BesTTY-Setup-1.0.0.zip](https://github.com/bazmadev/BesTTY/releases/latest) | Portable archive (No install required) | [🛡️ VirusTotal & SHA-256](https://github.com/bazmadev/BesTTY/releases/latest) |
-| **Linux** | [📥 BesTTY-1.0.0.AppImage](https://github.com/bazmadev/BesTTY/releases/latest) | AppImage & .deb packages | [🛡️ SHA-256 Checksums](https://github.com/bazmadev/BesTTY/releases/latest) |
-| **macOS** | [🍏 BesTTY-1.0.0.dmg](https://github.com/bazmadev/BesTTY/releases/latest) | DMG image for Intel & Apple Silicon | [🛡️ SHA-256 Checksums](https://github.com/bazmadev/BesTTY/releases/latest) |
+| **Windows** | [📥 BesTTY-Setup-1.0.1.exe](https://github.com/bazmadev/BesTTY/releases/latest) | Installer for Windows 10 & 11 (x64) | [🛡️ VirusTotal & SHA-256](https://github.com/bazmadev/BesTTY/releases/latest) |
+| **Windows (Portable)** | [📦 BesTTY-Setup-1.0.1.zip](https://github.com/bazmadev/BesTTY/releases/latest) | Portable archive (No install required) | [🛡️ VirusTotal & SHA-256](https://github.com/bazmadev/BesTTY/releases/latest) |
+| **Linux** | [📥 BesTTY-1.0.1.AppImage](https://github.com/bazmadev/BesTTY/releases/latest) | AppImage & .deb packages | [🛡️ SHA-256 Checksums](https://github.com/bazmadev/BesTTY/releases/latest) |
+| **macOS** | [🍏 BesTTY-1.0.1.dmg](https://github.com/bazmadev/BesTTY/releases/latest) | DMG image for Intel & Apple Silicon | [🛡️ SHA-256 Checksums](https://github.com/bazmadev/BesTTY/releases/latest) |
 
 > [!TIP]
 > Every release includes an automated cryptographic checksum file `SHA256SUMS.txt` and a public VirusTotal scan report link in the release notes.

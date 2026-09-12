@@ -1,6 +1,6 @@
 {
   "name": "bestty",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Modern Next-Gen Open-Source SSH/SFTP Client for Windows, Linux & macOS",
   "main": "dist-electron/electron/main.js",
   "scripts": {

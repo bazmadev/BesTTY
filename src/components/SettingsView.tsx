@@ -28,6 +28,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [saved, setSaved] = useState(false);
   const [bioTesting, setBioTesting] = useState(false);
   const [bioTestMsg, setBioTestMsg] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState('1.0.1');
+
+  useEffect(() => {
+    window.api?.updater?.getStatus?.().then((st) => {
+      if (st?.currentVersion) setAppVersion(st.currentVersion);
+    });
+  }, []);
 
   useEffect(() => {
     setLocalSettings(settings);
@@ -581,7 +588,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="flex items-center space-x-2">
                   <h3 className="text-sm font-bold font-mono">BesTTY</h3>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/20 font-medium">
-                    v1.0.0
+                    v{appVersion}
                   </span>
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
                     Open Source

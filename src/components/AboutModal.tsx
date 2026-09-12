@@ -35,7 +35,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({
   // OTA Updater state inside About modal
   const [updateState, setUpdateState] = useState<UpdateState>({
     status: 'idle',
-    currentVersion: '1.0.0',
+    currentVersion: '1.0.1',
   });
 
   useEffect(() => {

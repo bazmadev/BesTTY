@@ -185,7 +185,7 @@ const MainApp: React.FC = () => {
   // OTA Updater State
   const [updateState, setUpdateState] = useState<UpdateState>({
     status: 'idle',
-    currentVersion: '1.0.0',
+    currentVersion: '1.0.1',
   });
 
   useEffect(() => {
