@@ -29,6 +29,12 @@ sshManager.on('data', (payload) => {
   }
 });
 
+sshManager.on('connected', (payload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('ssh:connected', payload);
+  }
+});
+
 sshManager.on('ssh-error', (payload) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('ssh:error', payload);
@@ -214,6 +220,9 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('ssh:getCurrentDirectory', (_, sessionId) => {
     return sshManager.getCurrentDirectory(sessionId);
+  });
+  ipcMain.handle('ssh:isConnected', (_, sessionId) => {
+    return sshManager.isConnected(sessionId);
   });
 
   // SFTP

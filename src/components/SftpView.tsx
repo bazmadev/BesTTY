@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   SFTPFile, DirectorySyncConfig, STORAGE_KEY_DIR_SYNC, FolderClickMode, 
-  STORAGE_KEY_FOLDER_CLICK_MODE, FileClipboardState, EVENT_DIR_SYNC_CHANGED, EVENT_SFTP_REFRESHED 
+  STORAGE_KEY_FOLDER_CLICK_MODE, FileClipboardState, EVENT_DIR_SYNC_CHANGED, EVENT_SFTP_REFRESHED,
+  HostProfile
 } from '../types';
 import { useTranslation } from '../i18n';
 import { sanitizeRemotePath, parseSmartRemotePath } from '../utils/pathUtils';
@@ -18,6 +19,8 @@ import { SftpContextMenu } from './sftp/SftpContextMenu';
 
 interface SftpViewProps {
   sessionId: string;
+  host?: HostProfile;
+  onReconnectSession?: (sessionId: string, host?: HostProfile) => Promise<void>;
   isLight?: boolean;
   initialPath?: string;
   folderClickMode?: FolderClickMode;
@@ -28,6 +31,8 @@ interface SftpViewProps {
 
 export const SftpView: React.FC<SftpViewProps> = React.memo(({
   sessionId,
+  host,
+  onReconnectSession,
   isLight = false,
   initialPath = '/',
   folderClickMode = 'double',
@@ -220,7 +225,87 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
     return () => window.removeEventListener('click', handleWindowClick);
   }, []);
 
+  const hostRef = useRef<HostProfile | undefined>(host);
+  useEffect(() => {
+    if (host) {
+      hostRef.current = host;
+    }
+  }, [host]);
+
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const isInitialPathMount = useRef(true);
+
+  const handleReconnect = async () => {
+    const targetHost = host || hostRef.current;
+    setIsReconnecting(true);
+    setError(null);
+    try {
+      if (onReconnectSession) {
+        await onReconnectSession(sessionId, targetHost);
+      } else if (targetHost) {
+        const initialCols = Math.max(80, Math.floor((window.innerWidth - 60) / 9));
+        const initialRows = Math.max(24, Math.floor((window.innerHeight - 70) / 18));
+        await window.api.ssh.connect(sessionId, targetHost, initialCols, initialRows);
+      } else {
+        throw new Error('Профиль хоста не найден для переподключения');
+      }
+      showToast(t('terminal.reconnected') || 'Соединение успешно восстановлено', 'success');
+      await loadDirectory(currentPath, true);
+    } catch (e: any) {
+      const errMsg = e?.message || String(e);
+      setError(errMsg);
+      showToast('Ошибка переподключения: ' + errMsg, 'error');
+    } finally {
+      setIsReconnecting(false);
+    }
+  };
+
+  const handleRefreshClick = async () => {
+    if (isReconnecting) return;
+
+    let connected = false;
+    try {
+      if (window.api?.ssh?.isConnected) {
+        connected = await window.api.ssh.isConnected(sessionId);
+      } else {
+        connected = true;
+      }
+    } catch {
+      connected = false;
+    }
+
+    if (!connected && (host || hostRef.current)) {
+      await handleReconnect();
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      setSelectedPaths(new Set());
+      setLastSelectedPath(null);
+      const res = await window.api.sftp.list(sessionId, currentPath, true);
+      if (res) {
+        setCurrentPath(res.currentPath);
+        setInputPath(res.currentPath);
+        setFiles(res.files);
+      }
+    } catch (e: any) {
+      const errMsg = e?.message || String(e);
+      if (
+        (errMsg.includes('not found or not connected') ||
+         errMsg.includes('Session closed') ||
+         errMsg.includes('closed')) &&
+        (host || hostRef.current)
+      ) {
+        await handleReconnect();
+      } else {
+        setError(errMsg);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const loadDirectory = async (pathToGo: string, forceRefresh = false) => {
     setIsLoading(true);
@@ -263,8 +348,16 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
       }
     });
 
+    const unsubscribeConnected = window.api?.ssh?.onConnected?.((payload) => {
+      if (payload.sessionId === sessionId) {
+        setError(null);
+        loadDirectory(currentPath, true);
+      }
+    });
+
     return () => {
       unsubscribe?.();
+      unsubscribeConnected?.();
     };
   }, [sessionId]);
 
@@ -769,13 +862,14 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
             <CornerLeftUp className="w-4 h-4" />
           </button>
           <button
-            onClick={() => loadDirectory(currentPath, true)}
+            onClick={handleRefreshClick}
+            disabled={isLoading || isReconnecting}
             className={`p-1.5 rounded transition-colors ${
               isLight ? 'hover:bg-slate-100 text-slate-600' : 'hover:bg-white/10 text-slate-300'
             }`}
             title={t('sftp.refresh')}
           >
-            <RotateCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <RotateCw className={`w-4 h-4 ${isLoading || isReconnecting ? 'animate-spin text-sky-400' : ''}`} />
           </button>
           <button
             onClick={() => setShowNewFolder(true)}
@@ -1007,9 +1101,35 @@ export const SftpView: React.FC<SftpViewProps> = React.memo(({
 
       {/* Error display */}
       {error && (
-        <div className="p-2 bg-red-950/50 border-b border-red-800 text-xs text-red-300 flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-white font-bold">✕</button>
+        <div className="p-2.5 bg-red-950/70 border-b border-red-800 text-xs text-red-200 flex items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center space-x-2 min-w-0 flex-1">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span className="truncate">{error}</span>
+          </div>
+          <div className="flex items-center space-x-2 shrink-0">
+            {(host || hostRef.current) && (
+              <button
+                onClick={handleReconnect}
+                disabled={isReconnecting}
+                className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-medium text-xs flex items-center space-x-1.5 transition-colors shadow-sm"
+                title={t('terminal.reconnect') || 'Переподключиться'}
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${isReconnecting ? 'animate-spin' : ''}`} />
+                <span>
+                  {isReconnecting
+                    ? (t('terminal.reconnecting') || 'Подключение...')
+                    : (t('terminal.reconnect') || 'Переподключиться')}
+                </span>
+              </button>
+            )}
+            <button
+              onClick={() => setError(null)}
+              className="text-red-400 hover:text-white font-bold p-1"
+              title="Закрыть"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
 

@@ -27,7 +27,7 @@ export interface TabWorkspaceProps {
   onNavigateToTerminal: (sessionId: string, folderPath: string, shouldSwitchTab?: boolean) => void;
   onCloseTab: (tabId: string) => void;
   onNewConnection?: (type: TabType) => void;
-  onReconnectSession?: (sessionId: string, host: HostProfile) => Promise<void>;
+  onReconnectSession?: (sessionId: string, host?: HostProfile) => Promise<void>;
   onChangePane: (paneIndex: number, newConfig: PaneConfig, tabId: string) => void;
   onSetSplitMode: (mode: SplitLayoutMode, tabIdTarget?: string) => void;
   onRemovePane: (paneIndex: number, tabId: string) => void;
@@ -120,6 +120,8 @@ export const TabWorkspace: React.FC<TabWorkspaceProps> = React.memo(({
       ) : tab.type === 'sftp' && (tab.sessionId || activeSessions.size > 0) ? (
         <SftpView
           sessionId={tab.sessionId || Array.from(activeSessions.keys())[0] || ''}
+          host={sessionHost}
+          onReconnectSession={onReconnectSession}
           isLight={isLight}
           folderClickMode={settings.folderClickMode || 'double'}
           initialPath={tab.initialPath || sessionHost?.defaultPath || '/'}

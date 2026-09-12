@@ -356,6 +356,9 @@ export class SSHClientManager extends EventEmitter {
   }
 
   public async connect(sessionId: string, host: HostProfile, cols: number = 80, rows: number = 24): Promise<void> {
+    if (this.sessions.has(sessionId)) {
+      this.disconnect(sessionId);
+    }
     return new Promise((resolve, reject) => {
       let isResolved = false;
       const client = new Client();
@@ -367,6 +370,7 @@ export class SSHClientManager extends EventEmitter {
         port: host.port || 22,
         username,
         keepaliveInterval: (host.keepAliveInterval || 30) * 1000,
+        keepaliveCountMax: 10,
         readyTimeout: 25000,
         tryKeyboard: true, // Enables PAM / keyboard-interactive authentication fallback
         hostHash: 'sha256',
@@ -637,6 +641,11 @@ export class SSHClientManager extends EventEmitter {
 
   public getSession(sessionId: string): SSHSessionInfo | undefined {
     return this.sessions.get(sessionId);
+  }
+
+  public isConnected(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    return Boolean(session && session.client);
   }
 
   public getClientForHost(hostId: string): Client | undefined {

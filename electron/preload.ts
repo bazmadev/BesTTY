@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('ssh:disconnect', sessionId),
     getCurrentDirectory: (sessionId: string) =>
       ipcRenderer.invoke('ssh:getCurrentDirectory', sessionId),
+    isConnected: (sessionId: string) =>
+      ipcRenderer.invoke('ssh:isConnected', sessionId),
     onData: (callback: (payload: { sessionId: string; data: string }) => void) => {
       const handler = (_: any, payload: any) => callback(payload);
       ipcRenderer.on('ssh:data', handler);
@@ -59,6 +61,13 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('ssh:closed', handler);
       return () => {
         ipcRenderer.removeListener('ssh:closed', handler);
+      };
+    },
+    onConnected: (callback: (payload: { sessionId: string; hostId: string; fingerprint?: string }) => void) => {
+      const handler = (_: any, payload: any) => callback(payload);
+      ipcRenderer.on('ssh:connected', handler);
+      return () => {
+        ipcRenderer.removeListener('ssh:connected', handler);
       };
     },
     onError: (callback: (payload: { sessionId: string; error: string }) => void) => {

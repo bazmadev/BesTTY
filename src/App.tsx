@@ -124,6 +124,7 @@ const MainApp: React.FC = () => {
 
   // Active SSH Sessions cache: sessionId -> HostProfile
   const [activeSessions, setActiveSessions] = useState<Map<string, HostProfile>>(new Map());
+  const lastKnownSessionHostsRef = useRef<Map<string, HostProfile>>(new Map());
   const connectingHostIdsRef = useRef<Set<string>>(new Set());
 
   // Listen for SSH session closed events from backend
@@ -250,6 +251,7 @@ const MainApp: React.FC = () => {
       const initialRows = Math.max(24, Math.floor((window.innerHeight - 70) / 18));
       await window.api.ssh.connect(sessionId, host, initialCols, initialRows);
 
+      lastKnownSessionHostsRef.current.set(sessionId, host);
       setActiveSessions((prev) => new Map(prev).set(sessionId, host));
 
       if (initialTabType === 'terminal') {
@@ -340,9 +342,24 @@ const MainApp: React.FC = () => {
   }, [tabs, activeTabId, activeSessions]);
 
   // Reconnect SSH Session
-  const handleReconnectSession = useCallback(async (sessionId: string, host: HostProfile) => {
-    setActiveSessions((prev) => new Map(prev).set(sessionId, host));
-  }, []);
+  const handleReconnectSession = useCallback(async (sessionId: string, host?: HostProfile) => {
+    const targetHost = host || lastKnownSessionHostsRef.current.get(sessionId) || hosts.find((h) => {
+      const tab = tabs.find((t) => t.sessionId === sessionId);
+      return h.id === tab?.hostId;
+    });
+    if (!targetHost) {
+      throw new Error('Host profile not found for session');
+    }
+
+    const isAlreadyConnected = await window.api?.ssh?.isConnected?.(sessionId).catch(() => false);
+    if (!isAlreadyConnected) {
+      const initialCols = Math.max(80, Math.floor((window.innerWidth - 60) / 9));
+      const initialRows = Math.max(24, Math.floor((window.innerHeight - 70) / 18));
+      await window.api.ssh.connect(sessionId, targetHost, initialCols, initialRows);
+    }
+    lastKnownSessionHostsRef.current.set(sessionId, targetHost);
+    setActiveSessions((prev) => new Map(prev).set(sessionId, targetHost));
+  }, [hosts, tabs]);
 
   // Open Remote File in In-Place Monaco Editor
   const handleOpenFileInEditor = useCallback((sessionId: string, filePath: string, fileName: string) => {

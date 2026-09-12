@@ -37,9 +37,11 @@ declare global {
         disconnect: (sessionId: string) => Promise<void>;
         onData: (callback: (payload: { sessionId: string; data: string }) => void) => () => void;
         onClosed: (callback: (payload: { sessionId: string }) => void) => () => void;
+        onConnected: (callback: (payload: { sessionId: string; hostId: string; fingerprint?: string }) => void) => () => void;
         onError: (callback: (payload: { sessionId: string; error: string }) => void) => () => void;
         onDirectoryChanged: (callback: (payload: { sessionId: string; directory: string }) => void) => () => void;
         getCurrentDirectory: (sessionId: string) => Promise<string | undefined>;
+        isConnected: (sessionId: string) => Promise<boolean>;
       };
       sftp: {
         list: (sessionId: string, path?: string, forceRefresh?: boolean) => Promise<{ currentPath: string; files: SFTPFile[] }>;

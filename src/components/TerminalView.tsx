@@ -38,7 +38,7 @@ interface TerminalViewProps {
   onOpenMonitor: () => void;
   onOpenFileInEditor: (filePath: string, fileName: string) => void;
   onDuplicateSession: () => void;
-  onReconnectSession?: (sessionId: string, host: HostProfile) => Promise<void>;
+  onReconnectSession?: (sessionId: string, host?: HostProfile) => Promise<void>;
 }
 
 interface TerminalLayoutConfig {
@@ -704,6 +704,13 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
       }
     });
 
+    const unsubscribeConnected = window.api?.ssh?.onConnected?.((payload) => {
+      if (payload.sessionId === sessionId) {
+        setIsConnected(true);
+        isConnectedRef.current = true;
+      }
+    });
+
     // Handle container resize
     const resizeObserver = new ResizeObserver(() => {
       try {
@@ -720,6 +727,7 @@ export const TerminalView: React.FC<TerminalViewProps> = React.memo(({
       unsubscribeClosed?.();
       unsubscribeError?.();
       unsubscribeDir?.();
+      unsubscribeConnected?.();
       onResizeDispose.dispose();
       onKeyDispose.dispose();
       onDataDispose.dispose();

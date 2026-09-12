@@ -31,7 +31,7 @@ export interface SplitContainerProps {
   onNavigateToTerminal: (sessionId: string, folderPath: string, shouldSwitchTab?: boolean) => void;
   onCloseTab: (tabId: string) => void;
   onNewConnection?: (type: TabType) => void;
-  onReconnectSession?: (sessionId: string, host: HostProfile) => Promise<void>;
+  onReconnectSession?: (sessionId: string, host?: HostProfile) => Promise<void>;
   onClosePane?: (paneIndex: number) => void;
   onSwapPanes?: (indexA: number, indexB: number) => void;
 }
@@ -340,12 +340,15 @@ export const SplitContainer: React.FC<SplitContainerProps> = React.memo(({
     }
 
     if (config.viewType === 'sftp') {
+      const targetHost = (tab.sessionId ? activeSessions.get(tab.sessionId) : undefined) || hosts?.find((h) => h.id === tab.hostId);
       return (
         <SftpView
           sessionId={tab.sessionId}
+          host={targetHost}
+          onReconnectSession={onReconnectSession}
           isLight={isLight}
           folderClickMode={settings?.folderClickMode || 'double'}
-          initialPath={tab.initialPath || activeSessions.get(tab.sessionId)?.defaultPath || '/'}
+          initialPath={tab.initialPath || targetHost?.defaultPath || '/'}
           onOpenFileInEditor={(filePath, fileName) => onOpenFileInEditor(tab.sessionId!, filePath, fileName)}
           onNavigateToTerminal={(folderPath, shouldSwitch) => onNavigateToTerminal(tab.sessionId!, folderPath, shouldSwitch)}
           hasTerminalPane={tab.panes?.some((p) => p.viewType === 'terminal')}
