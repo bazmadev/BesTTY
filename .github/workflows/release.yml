@@ -114,10 +114,9 @@ jobs:
           echo "> Windows SmartScreen may show an *Unknown Publisher* notice on fresh releases until global download reputation builds. BesTTY is 100% open-source and free of malware or telemetry." >> security_table.md
 
           # Append to existing release notes if not already present
-          EXISTING_BODY=$(gh release view "$TAG_NAME" --json body -q .body 2>/dev/null || echo "")
-          if ! echo "$EXISTING_BODY" | grep -q "VirusTotal"; then
-            NEW_BODY="${EXISTING_BODY}
-
-$(cat security_table.md)"
-            gh release edit "$TAG_NAME" --notes "$NEW_BODY"
+          gh release view "$TAG_NAME" --json body -q .body > existing_notes.md 2>/dev/null || true
+          if ! grep -q "VirusTotal" existing_notes.md 2>/dev/null; then
+            echo "" >> existing_notes.md
+            cat security_table.md >> existing_notes.md
+            gh release edit "$TAG_NAME" --notes-file existing_notes.md
           fi
