@@ -48,3 +48,76 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           npx electron-builder --${{ matrix.platform }} --publish always
+
+      - name: Compute Platform SHA-256 Checksums
+        shell: bash
+        run: |
+          mkdir -p checksums
+          cd release
+          for f in *.{exe,zip,dmg,AppImage,deb,rpm}; do
+            if [ -f "$f" ]; then
+              sha256sum "$f" >> "../checksums/SHA256SUMS-${{ matrix.platform }}.txt"
+            fi
+          done
+          cat "../checksums/SHA256SUMS-${{ matrix.platform }}.txt" || true
+
+      - name: Upload Platform Checksum Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums-${{ matrix.platform }}
+          path: checksums/SHA256SUMS-${{ matrix.platform }}.txt
+
+  checksums:
+    name: Consolidate Checksums & Update Release Notes
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all checksum artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-checksums
+          merge-multiple: true
+
+      - name: Combine SHA-256 Checksums and Update Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          cd all-checksums
+          cat SHA256SUMS-*.txt 2>/dev/null | sort -u > SHA256SUMS.txt
+          echo "=== Unified SHA256SUMS.txt ==="
+          cat SHA256SUMS.txt
+
+          # Upload unified SHA256SUMS.txt to GitHub release
+          gh release upload "$TAG_NAME" SHA256SUMS.txt --clobber
+
+          # Generate Markdown table for VirusTotal verification
+          echo "" > security_table.md
+          echo "### 🔒 Security Checksums & VirusTotal Verification" >> security_table.md
+          echo "" >> security_table.md
+          echo "| File Name | SHA-256 Checksum | Antivirus Scan |" >> security_table.md
+          echo "| :--- | :--- | :--- |" >> security_table.md
+
+          while read -r hash file; do
+            if [ -n "$hash" ] && [ -n "$file" ]; then
+              clean_file=$(basename "$file")
+              vt_link="https://www.virustotal.com/gui/file/${hash}/detection"
+              echo "| \`$clean_file\` | \`$hash\` | [🛡️ VirusTotal Report]($vt_link) |" >> security_table.md
+            fi
+          done < SHA256SUMS.txt
+
+          echo "" >> security_table.md
+          echo "> [!NOTE]" >> security_table.md
+          echo "> Windows SmartScreen may show an *Unknown Publisher* notice on fresh releases until global download reputation builds. BesTTY is 100% open-source and free of malware or telemetry." >> security_table.md
+
+          # Append to existing release notes if not already present
+          EXISTING_BODY=$(gh release view "$TAG_NAME" --json body -q .body 2>/dev/null || echo "")
+          if ! echo "$EXISTING_BODY" | grep -q "VirusTotal"; then
+            NEW_BODY="${EXISTING_BODY}
+
+$(cat security_table.md)"
+            gh release edit "$TAG_NAME" --notes "$NEW_BODY"
+          fi
