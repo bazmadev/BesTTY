@@ -2,10 +2,33 @@
 
 > **Spiritual successor to SmarTTY**, reimagined for 2026 with modern Windows 11 Fluent 2 Design, GPU-accelerated terminal emulation, in-place Monaco code editor, real-time VPS telemetry, and zero-knowledge encrypted vault.
 
+<p align="center">
+  <a href="https://github.com/bazmadev/BesTTY/releases/latest"><img src="https://img.shields.io/github/v/release/bazmadev/BesTTY?color=0ea5e9&label=Latest%20Release&logo=github" alt="GitHub Release"></a>
+  <a href="https://github.com/bazmadev/BesTTY/releases"><img src="https://img.shields.io/github/downloads/bazmadev/BesTTY/total?color=10b981&label=Downloads" alt="Downloads"></a>
+  <a href="https://github.com/bazmadev/BesTTY/releases/latest"><img src="https://img.shields.io/badge/Security-VirusTotal%20Verified-brightgreen?logo=virustotal" alt="VirusTotal Verified"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT%20(Protected)-blue.svg" alt="License: MIT"></a>
+</p>
+
 ---
 
 **Languages / Языки / Լեզուներ:**  
-[English](#-bestty--the-next-gen-open-source-sshsftp-client-for-windows-10--11) • [Русский](#-описание-на-русском-языке) • [Հայերեն](#-նկարագրություն-հայերենով) • [🌐 Request a Language / Запросить язык](#-локализация-и-запрос-новых-языков--localization--language-requests)
+[English](#-bestty--the-next-gen-open-source-sshsftp-client-for-windows-10--11) • [Русский](#-описание-на-русском-языке) • [Հայերեն](#-նկարագրություն-հայերենով) • [📥 Downloads & Security](#-downloads--security-verification) • [🌐 Request a Language](#-локализация-и-запрос-новых-языков--localization--language-requests)
+
+---
+
+## 📥 Downloads & Security Verification
+
+Download official release binaries directly from the [Releases Page](https://github.com/bazmadev/BesTTY/releases/latest):
+
+| Platform | Download | Description | Antivirus & Checksums |
+| :--- | :--- | :--- | :--- |
+| **Windows** | [📥 BesTTY-Setup-1.0.0.exe](https://github.com/bazmadev/BesTTY/releases/latest) | Installer for Windows 10 & 11 (x64) | [🛡️ VirusTotal & SHA-256](https://github.com/bazmadev/BesTTY/releases/latest) |
+| **Windows (Portable)** | [📦 BesTTY-Setup-1.0.0.zip](https://github.com/bazmadev/BesTTY/releases/latest) | Portable archive (No install required) | [🛡️ VirusTotal & SHA-256](https://github.com/bazmadev/BesTTY/releases/latest) |
+| **Linux** | [📥 BesTTY-1.0.0.AppImage](https://github.com/bazmadev/BesTTY/releases/latest) | AppImage & .deb packages | [🛡️ SHA-256 Checksums](https://github.com/bazmadev/BesTTY/releases/latest) |
+| **macOS** | [🍏 BesTTY-1.0.0.dmg](https://github.com/bazmadev/BesTTY/releases/latest) | DMG image for Intel & Apple Silicon | [🛡️ SHA-256 Checksums](https://github.com/bazmadev/BesTTY/releases/latest) |
+
+> [!TIP]
+> Every release includes an automated cryptographic checksum file `SHA256SUMS.txt` and a public VirusTotal scan report link in the release notes.
 
 ---
 
@@ -149,6 +172,10 @@ BesTTY aims to support developers and sysadmins across the globe. You can easily
    - Все пароли, приватные ключи, настройки хостов и сниппеты защищены шифрованием **AES-256-GCM** с алгоритмом PBKDF2 (100 000 итераций).
    - Поддержка системного агента ключей Windows OpenSSH (`\\.\pipe\openssh-ssh-agent`) и Pageant.
 
+### 📥 Загрузка и проверка безопасности:
+Скачать последнюю версию BesTTY всегда можно в [разделе релизов GitHub](https://github.com/bazmadev/BesTTY/releases/latest).  
+Каждый релиз сопровождается контрольными суммами `SHA256SUMS.txt` и прямой ссылкой на отчет **VirusTotal**, подтверждающий 100% чистоту и безопасность файлов.
+
 ---
 
 ## 🇦🇲 Նկարագրություն հայերենով
@@ -200,6 +227,10 @@ BesTTY aims to support developers and sysadmins across the globe. You can easily
 6. **🔐 Ծածկագրված պահոց (Zero-Knowledge Vault)**՝
    - Բոլոր գաղտնաբառերը, SSH բանալիները և կարգավորումները պահպանվում են **AES-256-GCM** ծածկագրմամբ և PBKDF2 ալգորիթմով (100,000 իտերացիա):
    - Windows OpenSSH (`\\.\pipe\openssh-ssh-agent`) և Pageant աջակցություն:
+
+### 📥 Ներբեռնում և անվտանգության ստուգում:
+BesTTY-ի վերջին տարբերակը միշտ կարող եք ներբեռնել [GitHub-ի թողարկումների բաժնից](https://github.com/bazmadev/BesTTY/releases/latest):  
+Յուրաքանչյուր թողարկում պարունակում է `SHA256SUMS.txt` ստուգիչ գումարները և **VirusTotal**-ի անվտանգության հաշվետվության հղումը:
 
 ---
 
