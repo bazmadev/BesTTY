@@ -1,4 +1,4 @@
-# 🚀 BesTTY — The Next-Gen Open-Source SSH/SFTP Client for Windows 10 & 11
+# 🚀 BesTTY — The Next-Gen Open-Source SSH/SFTP Client for Windows 10 & 11 (Linux and MacOS are also supported, but not tested)
 
 > **Spiritual successor to SmarTTY**, reimagined for 2026 with modern Windows 11 Fluent 2 Design, GPU-accelerated terminal emulation, in-place Monaco code editor, real-time VPS telemetry, and zero-knowledge encrypted vault.
 
@@ -101,7 +101,7 @@ BesTTY aims to support developers and sysadmins across the globe. You can easily
 
 ## 🇷🇺 Описание на русском языке
 
-### 🚀 BesTTY — Open-Source SSH/SFTP клиент нового поколения для Windows 10 & 11
+### 🚀 BesTTY — Open-Source SSH/SFTP клиент нового поколения для Windows 10 & 11 (Linux и MacOS, тоже поддерживаются, но не тестировались мной)
 
 > **Духовный наследник легендарного SmarTTY**, переосмысленный для 2026 года с ультрасовременным дизайном Windows 11 Fluent 2 / Mica, аппаратным WebGL-ускорением терминала, встроенным редактором кода Monaco, телеметрией сервера в реальном времени и защищенным хранилищем с шифрованием AES-256.
 
